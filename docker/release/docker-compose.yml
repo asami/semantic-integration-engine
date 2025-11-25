@@ -27,7 +27,7 @@ services:
       - chroma_data:/chroma
 
   # ---------------------------------------------------------
-  # RagServer (production / user distribution)
+  # SieServer (production / user distribution)
   # - Pulled from GHCR or Docker Hub
   # - Does NOT build from source
   # ---------------------------------------------------------

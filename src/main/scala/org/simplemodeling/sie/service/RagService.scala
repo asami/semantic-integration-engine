@@ -19,7 +19,14 @@ class RagService(
   chroma: ChromaClient
 ):
   def run(query: String): RagResult =
-    RagResult(
-      concepts = fuseki.searchConcepts(query).getOrElse(Json.arr()),
-      passages = chroma.search("simplemodeling", query, 5).getOrElse(Json.arr())
-    )
+    val concepts =
+      try fuseki.searchConcepts(query).getOrElse(Json.arr())
+      catch case e: Throwable =>
+        Json.obj("error" -> Json.fromString(e.toString))
+
+    val passages =
+      try chroma.search("simplemodeling", query, 5).getOrElse(Json.arr())
+      catch case e: Throwable =>
+        Json.obj("error" -> Json.fromString(e.toString))
+
+    RagResult(concepts, passages)

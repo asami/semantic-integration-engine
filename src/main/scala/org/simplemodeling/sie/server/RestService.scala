@@ -11,7 +11,7 @@ import org.http4s.client.dsl.io.*
 import org.http4s.circe.*
 import org.http4s.dsl.io.*
 
-class RestService(client: Client[IO], ragQueryUri: Uri):
+class RestService(client: Client[IO], sieQueryUri: Uri):
 
   private def handle(input: String): Unit =
     parse(input) match
@@ -35,8 +35,8 @@ class RestService(client: Client[IO], ragQueryUri: Uri):
                     "capabilities" -> Json.obj(
                       "tools" -> Json.arr(
                         Json.obj(
-                          "name" -> Json.fromString("rag.query"),
-                          "description" -> Json.fromString("Query RAG via REST"),
+                          "name" -> Json.fromString("sie.query"),
+                          "description" -> Json.fromString("Query SIE via REST"),
                           "input_schema" -> Json.obj(
                             "type" -> Json.fromString("object"),
                             "properties" -> Json.obj(
@@ -50,7 +50,7 @@ class RestService(client: Client[IO], ragQueryUri: Uri):
                   )
                   McpResponse(id = req.id, result = Some(caps))
 
-                case "tools/rag.query" =>
+                case "tools/sie.query" =>
                   val q =
                     req.params.flatMap(_.hcursor.get[String]("query").toOption).getOrElse("")
 
@@ -58,7 +58,7 @@ class RestService(client: Client[IO], ragQueryUri: Uri):
 
                   val result =
                     client
-                      .expect[Json](Request[IO](Method.POST, ragQueryUri).withEntity(body))
+                      .expect[Json](Request[IO](Method.POST, sieQueryUri).withEntity(body))
                       .unsafeRunSync()
 
                   McpResponse(id = req.id, result = Some(result))

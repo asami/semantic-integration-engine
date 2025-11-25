@@ -23,11 +23,17 @@ class HttpRagServer(service: RagService, host: String, port: Int):
     case GET -> Root / "health" =>
       Ok(Json.obj("status" -> Json.fromString("ok")))
 
-    case req @ POST -> Root / "rag" / "query" =>
+    case req @ POST -> Root / "sie" / "query" =>
       for
         json  <- req.as[Json]
         query <- IO(json.hcursor.get[String]("query").getOrElse(""))
-        result = service.run(query)
+        result <- IO(service.run(query))
+                    .handleError(e =>
+                      RagResult(
+                        Json.obj("error" -> Json.fromString(e.toString)),
+                        Json.arr()
+                      )
+                    )
         resp  <- Ok(result)
       yield resp
   }.orNotFound
@@ -40,4 +46,3 @@ class HttpRagServer(service: RagService, host: String, port: Int):
       .withHttpApp(routes)
       .build
       .useForever
-

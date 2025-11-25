@@ -4,8 +4,6 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.1"
-
     libraryDependencies ++= Seq(
       // http4s Server/Client
       "org.http4s" %% "http4s-ember-server" % "0.23.26",
@@ -22,30 +20,24 @@ lazy val root = (project in file("."))
       "com.softwaremill.sttp.client3" %% "core"  % "3.9.7",
       "com.softwaremill.sttp.client3" %% "circe" % "3.9.7",
 
-      // config loader
-      "com.github.pureconfig" %% "pureconfig-core" % "0.17.7"
+      // config
+      "com.github.pureconfig" %% "pureconfig-core" % "0.17.5"
     ),
 
-    // Assembly settings
-    assembly / mainClass := Some("org.simplemodeling.sie.server.RagServerMain"),
+    // assembly settings
+    Compile / mainClass := Some("org.simplemodeling.sie.server.RagServerMain"),
     assembly / assemblyJarName := "semantic-integration-engine.jar"
   )
 
-lazy val deploy = taskKey[Unit]("Build assembly and copy to dist/")
+// sbt-assembly plugin (必要)
+addCommandAlias("deploy", ";clean;assembly;copyJar")
 
-deploy := {
-  val log = streams.value.log
+lazy val copyJar = taskKey[Unit]("Copy fat jar to dist/")
 
-  // Run assembly
-  val jar = (assembly in Compile).value
-
-  val distDir = baseDirectory.value / "dist"
-  IO.createDirectory(distDir)
-
-  val targetJar = distDir / "semantic-integration-engine.jar"
-
-  log.info(s"Copying ${jar.getName} to ${targetJar.getPath}")
-  IO.copyFile(jar, targetJar)
-
-  log.success("Deploy completed.")
+copyJar := {
+  val jar = (Compile / assembly).value
+  val dist = baseDirectory.value / "dist"
+  IO.createDirectory(dist)
+  IO.copyFile(jar, dist / jar.getName)
+  streams.value.log.info(s"Copied ${jar.getName} to dist/")
 }

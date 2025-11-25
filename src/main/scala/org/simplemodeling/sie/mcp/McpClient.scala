@@ -18,7 +18,7 @@ import scala.io.StdIn
  */
 class McpClient(restUrl: String)(using client: Client[IO]):
 
-  private val ragQueryUri = Uri.unsafeFromString(s"$restUrl/rag/query")
+  private val sieQueryUri = Uri.unsafeFromString(s"$restUrl/sie/query")
 
   def start(): Unit =
     while true do
@@ -46,8 +46,8 @@ class McpClient(restUrl: String)(using client: Client[IO]):
                   "capabilities" -> Json.obj(
                     "tools" -> Json.arr(
                       Json.obj(
-                        "name" -> Json.fromString("rag.query"),
-                        "description" -> Json.fromString("Query RAG via REST"),
+                        "name" -> Json.fromString("sie.query"),
+                        "description" -> Json.fromString("Query SIE via REST"),
                         "input_schema" -> Json.obj(
                           "type" -> Json.fromString("object"),
                           "properties" -> Json.obj(
@@ -61,13 +61,13 @@ class McpClient(restUrl: String)(using client: Client[IO]):
                 )
                 McpResponse(id = req.id, result = Some(caps))
 
-              case "tools/rag.query" =>
+              case "tools/sie.query" =>
                 val q =
                   req.params.flatMap(_.hcursor.get[String]("query").toOption).getOrElse("")
                 val body = Json.obj("query" -> Json.fromString(q))
                 val result =
                   client
-                    .expect[Json](Request[IO](Method.POST, ragQueryUri).withEntity(body))
+                    .expect[Json](Request[IO](Method.POST, sieQueryUri).withEntity(body))
                     .unsafeRunSync()
                 McpResponse(id = req.id, result = Some(result))
 
