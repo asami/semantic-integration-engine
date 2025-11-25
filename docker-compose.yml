@@ -1,0 +1,57 @@
+version: "3.9"
+
+services:
+  fuseki:
+    image: stain/jena-fuseki:4.8.0
+    container_name: fuseki
+    ports:
+      - "9030:3030"
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: chromadb
+    ports:
+      - "9040:8000"
+    volumes:
+      - chroma_data:/chroma
+
+  init-chroma:
+    image: python:3.11-slim
+    depends_on: [chromadb]
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "
+      pip install chromadb requests &&
+      curl -L -o /tmp/site.jsonld https://www.simplemodeling.org/site.jsonld &&
+      python3 /tmp/init-chroma.py
+      "
+    volumes:
+      - ./init/init-chroma.py:/tmp/init-chroma.py
+
+  init-fuseki:
+    image: curlimages/curl:8.10.1
+    depends_on: [fuseki]
+    entrypoint: ["/bin/sh", "-c"]
+    command: >
+      "
+      curl -L -o /tmp/site.jsonld https://www.simplemodeling.org/site.jsonld &&
+      curl -X POST -H 'Content-Type: application/ld+json' \
+        --data-binary @/tmp/site.jsonld \
+        http://fuseki:3030/ds/data
+      "
+
+  sie:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: sie
+    depends_on: [fuseki, chromadb, init-fuseki, init-chroma]
+    ports:
+      - "9050:9050"
+    environment:
+      FUSEKI_URL: http://fuseki:3030/ds
+      CHROMA_URL: http://chromadb:8000
+      SIESERVER_PORT: 9050
+
+volumes:
+  chroma_data:

@@ -1,8 +1,9 @@
+version: "3.9"
 
 services:
 
   # ---------------------------------------------------------
-  # Fuseki
+  # Fuseki (SPARQL server)
   # ---------------------------------------------------------
   fuseki:
     image: stain/jena-fuseki:4.8.0
@@ -60,18 +61,14 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command: >
       "
-      echo 'Downloading site.jsonld...' &&
       curl -L -o /tmp/site.jsonld https://www.simplemodeling.org/site.jsonld &&
-      echo 'Posting site.jsonld to Fuseki...' &&
-      curl -X POST \
-        -H 'Content-Type: application/ld+json' \
+      curl -X POST -H 'Content-Type: application/ld+json' \
         --data-binary @/tmp/site.jsonld \
-        http://fuseki:3030/ds/data &&
-      echo 'Fuseki initialization completed.'
+        http://fuseki:3030/ds/data
       "
 
   # ---------------------------------------------------------
-  # SIE (Semantic Integration Engine)
+  # Semantic Integration Engine (SIE)
   # ---------------------------------------------------------
   sie:
     build:
@@ -82,6 +79,7 @@ services:
       - fuseki
       - chromadb
       - init-fuseki
+      - init-chroma
     ports:
       - "9050:9050"
     environment:
