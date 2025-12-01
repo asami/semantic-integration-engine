@@ -12,6 +12,7 @@ services:
       - ./fuseki/config.ttl:/fuseki/config.ttl
       - ./fuseki/shiro.ini:/fuseki/shiro.ini
       - ./fuseki/databases:/fuseki/databases
+      - ./ontology:/ontology
 
   chromadb:
     image: chromadb/chroma:latest
@@ -31,14 +32,11 @@ services:
       - chromadb
     environment:
       CHROMA_URL: "http://chromadb:8000"
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        pip install chromadb openai requests &&
-        curl -L -o /tmp/site.jsonld https://www.simplemodeling.org/site.jsonld &&
-        python3 /tmp/init-chroma.py
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
     volumes:
+      - ./init/init-chroma.sh:/init-chroma.sh
       - ./init/init-chroma.py:/tmp/init-chroma.py
+    entrypoint: ["/bin/sh", "/init-chroma.sh"]
 
   init-fuseki:
     image: curlimages/curl:8.10.1
@@ -47,6 +45,7 @@ services:
       - fuseki
     volumes:
       - ./init/init-fuseki.sh:/init-fuseki.sh
+      - ./ontology:/ontology
     entrypoint: ["/bin/sh", "/init-fuseki.sh"]
 
   sie:
@@ -65,6 +64,7 @@ services:
       FUSEKI_URL: http://fuseki:3030/ds
       CHROMA_URL: http://chromadb:8000
       SIESERVER_PORT: 9050
+      OPENAI_API_KEY: "${OPENAI_API_KEY}"
 
 volumes:
   chroma_data:

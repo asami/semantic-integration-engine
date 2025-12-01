@@ -9,7 +9,7 @@ import io.circe.Json
  * @version Nov. 25, 2025
  * @author  ASAMI, Tomoharu
  */
-class FusekiClient(endpoint: String):
+class FusekiClient(endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://localhost:3030/ds")):
   private val url = s"$endpoint/query"
   private val backend = HttpClientSyncBackend()
 

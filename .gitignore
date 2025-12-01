@@ -8,3 +8,4 @@ target
 .*
 boot
 fuseki/databases
+dist

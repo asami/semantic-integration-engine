@@ -4,6 +4,8 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
+    version := "0.0.2-SNAPSHOT",
+
     libraryDependencies ++= Seq(
       // http4s Server/Client
       "org.http4s" %% "http4s-ember-server" % "0.23.26",
