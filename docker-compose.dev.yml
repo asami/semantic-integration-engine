@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
 
   fuseki:
@@ -13,9 +11,11 @@ services:
       - ./fuseki/shiro.ini:/fuseki/shiro.ini
       - ./fuseki/databases:/fuseki/databases
       - ./ontology:/ontology
+    networks:
+      - sie-network
 
   chromadb:
-    image: chromadb/chroma:latest
+    image: chromadb/chroma:0.4.24
     container_name: chromadb
     ports:
       - "9040:8000"
@@ -24,6 +24,8 @@ services:
       - ANONYMIZED_TELEMETRY=0
     volumes:
       - chroma_data:/chroma
+    networks:
+      - sie-network
 
   init-chroma:
     image: python:3.11-slim
@@ -31,12 +33,13 @@ services:
     depends_on:
       - chromadb
     environment:
-      CHROMA_URL: "http://chromadb:8000"
+      CHROMA_URL: "http://sie-embedding:8081"
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
     volumes:
       - ./init/init-chroma.sh:/init-chroma.sh
-      - ./init/init-chroma.py:/tmp/init-chroma.py
-    entrypoint: ["/bin/sh", "/init-chroma.sh"]
+    entrypoint: ["sh", "-c", "echo init-chroma placeholder; sleep 2"]
+    networks:
+      - sie-network
 
   init-fuseki:
     image: curlimages/curl:8.10.1
@@ -47,6 +50,16 @@ services:
       - ./init/init-fuseki.sh:/init-fuseki.sh
       - ./ontology:/ontology
     entrypoint: ["/bin/sh", "/init-fuseki.sh"]
+    networks:
+      - sie-network
+
+  sie-embedding:
+    build: ./src/main/python/embedding
+    container_name: sie-embedding
+    ports:
+      - "8081:8081"
+    networks:
+      - sie-network
 
   sie:
     build:
@@ -55,16 +68,23 @@ services:
     container_name: sie
     depends_on:
       - fuseki
-      - chromadb
       - init-fuseki
       - init-chroma
+      - sie-embedding
     ports:
       - "9050:9050"
     environment:
       FUSEKI_URL: http://fuseki:3030/ds
-      CHROMA_URL: http://chromadb:8000
+      CHROMA_URL: http://sie-embedding:8081
       SIESERVER_PORT: 9050
       OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      EMBEDDING_ENGINE_TYPE: "oss"
+      OSS_EMBEDDING_URL: "http://sie-embedding:8081"
+    networks:
+      - sie-network
 
 volumes:
   chroma_data:
+
+networks:
+  sie-network:

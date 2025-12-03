@@ -1,0 +1,4 @@
+fastapi==0.115.0
+uvicorn==0.38.0
+numpy==1.26.4
+chromadb==0.4.24
