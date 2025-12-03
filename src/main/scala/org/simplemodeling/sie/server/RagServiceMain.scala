@@ -8,6 +8,7 @@ import org.simplemodeling.sie.chroma.*
 import org.simplemodeling.sie.service.*
 import org.simplemodeling.sie.indexer.HtmlIndexer
 import org.simplemodeling.sie.embedding.*
+import org.simplemodeling.sie.init.IndexInitializer
 
 /*
  * @since   Nov. 20, 2025
@@ -46,23 +47,28 @@ object RagServerMain extends IOApp.Simple:
           IO.println(s"[RagServerMain] Could not verify collection existence: $err")
       }
 
-      service <- IO.pure(RagService(fuseki, chroma, embedding))
-
       forceIndex = sys.env.get("SIE_INDEX_ON_START").exists(_.equalsIgnoreCase("true"))
 
-      indexIO =
-        if (forceIndex)
-          IO.println("[RagServerMain] Forced indexing (SIE_INDEX_ON_START=true)...") *>
-            HtmlIndexer.indexAll(chroma, force = true).handleErrorWith { e =>
-              IO.println(s"[RagServerMain] Indexing failed: ${e.getMessage}")
+      _ <-
+        if forceIndex then
+          IO.println("[RagServerMain] Forced indexing via IndexInitializer (SIE_INDEX_ON_START=true)...") *>
+            IO(IndexInitializer.run(fuseki, chroma, embedding)).handleErrorWith { e =>
+              IO.println(s"[RagServerMain] IndexInitializer failed: ${e.getMessage}")
             }
         else
-          IO.println("[RagServerMain] Initial-only indexing (force = false).") *>
-            HtmlIndexer.indexAll(chroma, force = false).handleErrorWith { e =>
-              IO.println(s"[RagServerMain] Indexing failed: ${e.getMessage}")
-            }
+          collectionExists match
+            case Right(false) =>
+              IO.println("[RagServerMain] Running initial indexing via IndexInitializer (collection did not exist)...") *>
+                IO(IndexInitializer.run(fuseki, chroma, embedding)).handleErrorWith { e =>
+                  IO.println(s"[RagServerMain] IndexInitializer failed: ${e.getMessage}")
+                }
+            case Right(true) =>
+              IO.println("[RagServerMain] Skipping IndexInitializer (collection already exists).")
+            case Left(err) =>
+              IO.println(s"[RagServerMain] Skipping IndexInitializer due to collection existence error: $err")
 
-      _ <- indexIO
+      service <- IO.pure(RagService(fuseki, chroma, embedding))
+
       _ <- HttpRagServer(service, cfg.server.host, cfg.server.siePort).start
     } yield ()
   }

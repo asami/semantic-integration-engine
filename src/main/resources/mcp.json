@@ -1,0 +1,45 @@
+{
+  "schema_version": "v1",
+  "name": "simplemodeling_sie",
+  "version": "2025-12-04",
+  "description": "Semantic Integration Engine for SimpleModeling.org. Provides semantic search across SmartDox, RDF, and the SimpleModeling Knowledge Graph.",
+  "interfaces": {
+    "websocket": {
+      "url": "ws://localhost:9050/mcp",
+      "protocol": "jsonrpc-2.0"
+    }
+  },
+  "capabilities": {
+    "tools": {
+      "enabled": true
+    }
+  },
+  "tools": [
+    {
+      "name": "tools.sie.query",
+      "description": "Semantic search across SmartDox, RDF, and SimpleModeling Knowledge Graph.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Natural language query, glossary term, page title, or concept name."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 20,
+            "default": 5,
+            "description": "Maximum number of passages to retrieve."
+          }
+        },
+        "required": ["query"]
+      }
+    }
+  ],
+  "metadata": {
+    "author": "ASAMI, Tomoharu",
+    "homepage": "https://www.simplemodeling.org/",
+    "license": "Apache-2.0"
+  }
+}

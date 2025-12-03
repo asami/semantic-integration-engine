@@ -12,8 +12,22 @@ import org.http4s.client.Client
 import scala.io.StdIn
 
 /*
+ * NOTE:
+ * This McpClient is kept for integration testing and for compatibility with
+ * non‑ChatGPT AI applications. It acts as a process‑based MCP client using
+ * STDIN/STDOUT and delegates to the SIE REST endpoint.
+ *
+ * ChatGPT does NOT use this client. ChatGPT communicates with SIE via the
+ * WebSocket‑based MCP server implementation.
+ *
+ * This class is useful for:
+ *   - Local/CLI MCP testing,
+ *   - Connecting other MCP‑compatible AI systems,
+ *   - Development diagnostics.
+ *
  * @since   Nov. 20, 2025
- * @version Nov. 25, 2025
+ *  version Nov. 25, 2025
+ * @version Dec.  4, 2025
  * @author  ASAMI, Tomoharu
  */
 class McpClient(restUrl: String)(using client: Client[IO]):

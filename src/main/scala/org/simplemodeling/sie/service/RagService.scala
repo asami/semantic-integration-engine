@@ -3,6 +3,7 @@ package org.simplemodeling.sie.service
 import org.simplemodeling.sie.fuseki.FusekiClient
 import org.simplemodeling.sie.chroma.ChromaClient
 import org.simplemodeling.sie.embedding.EmbeddingEngine
+import org.simplemodeling.sie.init.IndexInitializer
 import io.circe.*
 import cats.effect.unsafe.implicits.global
 import cats.effect.IO
@@ -10,14 +11,9 @@ import cats.effect.IO
 /*
  * @since   Nov. 20, 2025
  *          Nov. 25, 2025
- * @version Dec.  3, 2025
+ * @version Dec.  4, 2025
  * @author  ASAMI, Tomoharu
  */
-case class RagResult(
-  concepts: Json,
-  passages: Json
-) derives Encoder
-
 class RagService(
   fuseki: FusekiClient,
   chroma: ChromaClient,
@@ -26,7 +22,7 @@ class RagService(
   def runIO(query: String): IO[RagResult] =
     val conceptsIO =
       fuseki
-        .searchConceptsIO(query)
+        .searchConceptsJson(query)
         .handleError(e => Json.obj("error" -> Json.fromString(e.toString)))
 
     val embedIO =
@@ -62,3 +58,20 @@ class RagService(
 
   def run(query: String): RagResult =
     runIO(query).unsafeRunSync()
+
+  def initChroma(): Json =
+    try
+      IndexInitializer.run(fuseki, chroma, embedding)
+      Json.obj(
+        "status" -> Json.fromString("ok")
+      )
+    catch
+      case e: Throwable =>
+        Json.obj(
+          "error" -> Json.fromString(e.toString)
+        )
+
+case class RagResult(
+  concepts: Json,
+  passages: Json
+) derives Encoder

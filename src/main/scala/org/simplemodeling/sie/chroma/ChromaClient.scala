@@ -10,7 +10,7 @@ import java.nio.charset.StandardCharsets
 /*
  * @since   Nov. 20, 2025
  *          Nov. 25, 2025
- * @version Dec.  3, 2025
+ * @version Dec.  4, 2025
  * @author  ASAMI, Tomoharu
  */
 class ChromaClient(endpoint: String, embeddingEngine: EmbeddingEngine):
@@ -67,6 +67,18 @@ class ChromaClient(endpoint: String, embeddingEngine: EmbeddingEngine):
 
   def deleteCollection(collection: String): Either[String, Json] =
     Left("deleteCollection is not supported by the current Python-based embedding server")
+
+  def addDocumentsMap(
+      collection: String,
+      ids: List[String],
+      documents: List[String],
+      metadatas: List[Map[String, String]]
+  ): Either[String, Json] =
+    val metasJson: List[Json] =
+      metadatas.map { m =>
+        Json.obj(m.toSeq.map { case (k, v) => (k, Json.fromString(v)) }*)
+      }
+    addDocuments(collection, ids, documents, metasJson)
 
   def addDocuments(
       collection: String,

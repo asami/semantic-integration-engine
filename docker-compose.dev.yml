@@ -34,10 +34,10 @@ services:
       - chromadb
     environment:
       CHROMA_URL: "http://sie-embedding:8081"
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      # OPENAI_API_KEY: "${OPENAI_API_KEY}"
     volumes:
-      - ./init/init-chroma.sh:/init-chroma.sh
-    entrypoint: ["sh", "-c", "echo init-chroma placeholder; sleep 2"]
+      - ./init/init-chroma.py:/init-chroma.py
+    entrypoint: ["python", "/init-chroma.py"]
     networks:
       - sie-network
 
@@ -77,8 +77,8 @@ services:
       FUSEKI_URL: http://fuseki:3030/ds
       CHROMA_URL: http://sie-embedding:8081
       SIESERVER_PORT: 9050
-      OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      EMBEDDING_ENGINE_TYPE: "oss"
+      # OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      EMBEDDING_ENGINE_TYPE: "none"
       OSS_EMBEDDING_URL: "http://sie-embedding:8081"
     networks:
       - sie-network
