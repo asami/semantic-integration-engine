@@ -41,21 +41,6 @@ object HtmlIndexer {
       force: Boolean = false
   ): IO[Unit] = {
 
-    if (!force) {
-      chroma.collectionExists(CollectionName) match {
-        case Right(true) =>
-          return IO.println(
-            s"[HtmlIndexer] Collection '$CollectionName' already exists. Skipping indexing."
-          )
-        case Right(false) =>
-          () // continue
-        case Left(errorMessage) =>
-          return IO.println(
-            s"[HtmlIndexer] Could not verify collection existence: $errorMessage"
-          )
-      }
-    }
-
     val crawler = SiteJsonCrawler
     val fetcher = HtmlFetcher()
 
@@ -148,10 +133,10 @@ object HtmlIndexer {
         IO.fromEither(
           chroma
             .addDocuments(
-              collection = CollectionName,
-              ids = ids,
-              documents = documents,
-              metadatas = metadatas
+              CollectionName,
+              ids,
+              documents,
+              metadatas
             )
             .leftMap(err => new RuntimeException(err))
             .map(_ => ())

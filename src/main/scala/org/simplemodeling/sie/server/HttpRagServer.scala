@@ -28,7 +28,10 @@ class HttpRagServer(service: RagService, host: String, port: Int):
 
   private def httpRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "health" =>
-      Ok(Json.obj("status" -> Json.fromString("ok")))
+      for
+        report <- service.health()
+        resp   <- Ok(report)
+      yield resp
 
     case POST -> Root / "admin" / "init-chroma" =>
       for
@@ -42,12 +45,10 @@ class HttpRagServer(service: RagService, host: String, port: Int):
         json  <- req.as[Json]
         query <- IO(json.hcursor.get[String]("query").getOrElse(""))
         result <- IO(service.run(query))
-                    .handleError(e =>
-                      RagResult(
-                        Json.obj("error" -> Json.fromString(e.toString)),
-                        Json.arr()
-                      )
-                    )
+                    .handleError { e =>
+                      println(s"[HttpRagServer] error in /sie/query: ${e.toString}")
+                      RagResult(Nil, Nil)
+                    }
         resp  <- Ok(result)
       yield resp
   }

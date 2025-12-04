@@ -41,22 +41,16 @@ object EmbeddingEngineFactory:
   // Auto-detect
   // ---------------------------------------------------------------------------
 
-  private def autoDetect(): IO[EmbeddingEngine] = IO.pure(EmbeddingEngine.none)
-
-  private def autoDetectBak(): IO[EmbeddingEngine] =
-    (sys.env.get("OPENAI_API_KEY"), ossModelAvailable()) match
-      case (Some(_), _) =>
-        createOpenAI()
-
-      case (None, true) =>
-        createOSS()
-
-      case _ =>
-        IO.pure(EmbeddingEngine.none)
-
-  private def ossModelAvailable(): Boolean =
-    sys.env.get("SIE_EMBEDDING_MODEL_PATH").isDefined &&
-      sys.env.get("SIE_EMBEDDING_TOKENIZER_PATH").isDefined
+  private def autoDetect(): IO[EmbeddingEngine] =
+    // Try OSS embedding endpoint first
+    createOSS().attempt.flatMap {
+      case Right(engine) => IO.pure(engine)
+      case Left(_) =>
+        // Try OpenAI
+        sys.env.get("OPENAI_API_KEY") match
+          case Some(_) => createOpenAI()
+          case None    => IO.pure(EmbeddingEngine.none)
+    }
 
   // ---------------------------------------------------------------------------
   // OpenAI
@@ -82,13 +76,6 @@ object EmbeddingEngineFactory:
   // ---------------------------------------------------------------------------
 
   private def createOSS(): IO[EmbeddingEngine] =
-    if !ossModelAvailable() then
-      IO.raiseError(
-        new RuntimeException(
-          "SIE_EMBEDDING_MODE=oss, but OSS model paths are missing"
-        )
-      )
-    else
-      EmberClientBuilder.default[IO].build.use { client =>
-        OSSEmbeddingEngine.fromEnv(client)
-      }
+    EmberClientBuilder.default[IO].build.use { client =>
+      OSSEmbeddingEngine.fromEnv(client)
+    }

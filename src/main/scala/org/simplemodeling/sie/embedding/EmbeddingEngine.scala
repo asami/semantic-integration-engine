@@ -1,6 +1,7 @@
 package org.simplemodeling.sie.embedding
 
 import cats.effect.IO
+import scala.concurrent.duration.*
 
 /**
  * Unified interface for embedding generation.
@@ -32,6 +33,35 @@ trait EmbeddingEngine:
    * Each input text must correspond to exactly one embedding vector.
    */
   def embed(texts: List[String]): IO[Option[List[Array[Float]]]]
+
+  /**
+   * Retry wrapper for embedding calls.
+   *
+   * @param attempts  Number of retry attempts.
+   * @param delayMs   Milliseconds to wait between attempts.
+   * @param action    IO action to retry.
+   */
+  protected def retryIO[T](attempts: Int, delayMs: Long)(action: IO[T]): IO[T] =
+    action.handleErrorWith { e =>
+      if attempts > 1 then
+        IO.sleep(delayMs.millis) *> 
+          retryIO(attempts - 1, delayMs)(action)
+      else
+        IO.raiseError(e)
+    }
+
+  /**
+   * Wrapper for embedding with retry logic.
+   *
+   * Engines may call this instead of `embed` directly to ensure
+   * embedding servers have booted up.
+   */
+  def embedWithRetry(
+    texts: List[String],
+    attempts: Int = 10,
+    delayMs: Long = 500
+  ): IO[Option[List[Array[Float]]]] =
+    retryIO(attempts, delayMs)(embed(texts))
 
 object EmbeddingEngine:
 

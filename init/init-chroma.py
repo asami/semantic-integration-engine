@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/usr/bin/env python3
 #
 # init-chroma.sh (NOP version)
 #
@@ -7,7 +7,4 @@
 # If Chroma initialization becomes necessary, add the logic here.
 #
 
-echo "[init-chroma] NOP: no initialization performed (reserved hook)."
-sleep 1
-
-exit 0
+print("[init-chroma] NOP: no initialization performed (reserved hook).")

@@ -32,7 +32,7 @@ final class OSSEmbeddingEngine(
 
   override def embed(texts: List[String]): IO[Option[List[Array[Float]]]] =
     val reqJson = Json.obj(
-      "input" -> Json.fromValues(texts.map(Json.fromString))
+      "texts" -> Json.fromValues(texts.map(Json.fromString))
     )
     val req = POST(reqJson, endpoint)
 

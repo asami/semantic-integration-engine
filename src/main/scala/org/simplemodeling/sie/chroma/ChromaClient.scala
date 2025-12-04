@@ -5,201 +5,248 @@ import org.simplemodeling.sie.http.SimpleHttpClient
 import org.simplemodeling.sie.embedding.*
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
-import java.nio.charset.StandardCharsets
+import scala.concurrent.duration.*
+import cats.syntax.all.*
+
+// -------------------------
+// Models for Chroma decoding
+// -------------------------
+
+case class RawPassage(
+  id: String,
+  text: String,
+  metadata: Map[String, String],
+  distance: Double
+)
+
+case class ChromaResults(
+  ids: List[List[String]],
+  documents: List[List[String]],
+  metadatas: List[List[io.circe.Json]],
+  distances: List[List[Double]]
+)
+
+object ChromaResults:
+  given Decoder[ChromaResults] =
+    Decoder.forProduct4("ids", "documents", "metadatas", "distances")(ChromaResults.apply)
+
+case class ChromaResponse(results: ChromaResults)
+
+object ChromaResponse:
+  given Decoder[ChromaResponse] =
+    Decoder.forProduct1("results")(ChromaResponse.apply)
 
 /*
+ * ChromaClient
+ *
+ * Clean version — no RagService or model classes.
+ * Provides:
+ *   - collectionExists
+ *   - createCollection
+ *   - addDocuments / addDocumentsMap
+ *   - search (embedding)
+ *   - hybridSearch (query_texts + query_embeddings)
+ *
  * @since   Nov. 20, 2025
- *          Nov. 25, 2025
  * @version Dec.  4, 2025
- * @author  ASAMI, Tomoharu
+ * @author  ASAMI
  */
 class ChromaClient(endpoint: String, embeddingEngine: EmbeddingEngine):
-  private val baseUri: String = if endpoint.endsWith("/") then endpoint.dropRight(1) else endpoint
+  private val baseUri =
+    if endpoint.endsWith("/") then endpoint.dropRight(1) else endpoint
+
+  // Simple retry helper for all HTTP calls to the embedding server / Chroma.
+  private def retryIO[A](ioa: IO[A], name: String): IO[A] =
+    def loop(remaining: Int, delay: FiniteDuration): IO[A] =
+      ioa.handleErrorWith { e =>
+        if remaining <= 0 then
+          IO.raiseError(e)
+        else
+          IO.println(s"[ChromaClient][retry:$name] remaining=$remaining error=${e.getMessage}") *> 
+            IO.sleep(delay) *> 
+            loop(remaining - 1, delay * 2)
+      }
+    // Try up to 3 times with exponential backoff starting at 200ms
+    loop(3, 200.millis)
+
+  // -------------------------
+  // HTTP Helpers
+  // -------------------------
 
   private def getJson(path: String): IO[Either[String, Json]] =
-    val parts = "chroma" +: path.split("/").toSeq
-    val uriStr = s"$baseUri/${parts.mkString("/")}"
-    IO.println(s"[ChromaClient] GET $uriStr") *>
-      SimpleHttpClient.get(uriStr).map { resp =>
-        io.circe.parser.parse(resp.body).left.map(_.getMessage)
-      }
+    val uri = s"$baseUri/chroma/$path"
+    IO.println(s"[ChromaClient] GET $uri") *>
+      retryIO(
+        SimpleHttpClient.get(uri).map { resp =>
+          io.circe.parser.parse(resp.body).left.map(_.getMessage)
+        },
+        s"GET $path"
+      )
 
-  private def postJson(path: String, json: Json): IO[Either[String, Json]] =
-    val parts = "chroma" +: path.split("/").toSeq
-    val uriStr = s"$baseUri/${parts.mkString("/")}"
-    val bodyStr = json.noSpaces
-    IO.println(s"[ChromaClient] POST $uriStr payload=${bodyStr.take(200)}...") *>
-      SimpleHttpClient.post(uriStr, bodyStr).map { resp =>
-        io.circe.parser.parse(resp.body).left.map(_.getMessage)
-      }
+  private def postJson(path: String, payload: Json): IO[Either[String, Json]] =
+    val uri = s"$baseUri/chroma/$path"
+    IO.println(s"[ChromaClient] POST $uri") *>
+      retryIO(
+        SimpleHttpClient.post(uri, payload.noSpaces).map { resp =>
+          io.circe.parser.parse(resp.body).left.map(_.getMessage)
+        },
+        s"POST $path"
+      )
 
-  private def deletePath(path: String): IO[Either[String, Json]] =
-    val parts = "chroma" +: path.split("/").toSeq
-    val uriStr = s"$baseUri/${parts.mkString("/")}"
-    IO.println(s"[ChromaClient] DELETE $uriStr") *>
-      SimpleHttpClient.delete(uriStr).map { resp =>
-        io.circe.parser.parse(resp.body).left.map(_.getMessage)
-      }
+  // -------------------------
+  // Collections
+  // -------------------------
 
-  def collectionExists(collection: String): Either[String, Boolean] =
-    getJson(s"collections/$collection/exists").unsafeRunSync() match
+  def collectionExists(name: String): Either[String, Boolean] =
+    getJson(s"collections/$name/exists").unsafeRunSync() match
       case Right(json) =>
-        val cursor = json.hcursor
-        cursor.get[Boolean]("exists") match
-          case Right(v) => Right(v)
-          case Left(_)  =>
-            println(s"[ChromaClient] collectionExists($collection): missing 'exists' field, treating as false")
-            Right(false)
+        json.hcursor.get[Boolean]("exists").getOrElse(false).asRight[String]
       case Left(err) =>
-        val lowered = err.toLowerCase
-        if lowered.contains("not found") || lowered.contains("does not exist") then
-          println(s"[ChromaClient] collectionExists($collection): Not Found (treated as false). rawError=$err")
-          Right(false)
-        else
-          println(s"[ChromaClient] collectionExists($collection): unexpected error: $err")
-          Left(err)
+        Left(err)
 
-  def createCollection(collection: String): Either[String, Json] =
-    postJson(s"collections/$collection/create", Json.obj()).unsafeRunSync()
+  def createCollection(name: String): Either[String, Json] =
+    postJson(s"collections/$name/create", Json.obj()).unsafeRunSync()
 
-  def listCollections(): Either[String, Json] =
-    Left("listCollections is not supported by the current Python-based embedding server")
-
-  def deleteCollection(collection: String): Either[String, Json] =
-    Left("deleteCollection is not supported by the current Python-based embedding server")
+  // -------------------------
+  // Add Documents
+  // -------------------------
 
   def addDocumentsMap(
       collection: String,
       ids: List[String],
-      documents: List[String],
-      metadatas: List[Map[String, String]]
+      docs: List[String],
+      metas: List[Map[String, String]]
   ): Either[String, Json] =
-    val metasJson: List[Json] =
-      metadatas.map { m =>
-        Json.obj(m.toSeq.map { case (k, v) => (k, Json.fromString(v)) }*)
-      }
-    addDocuments(collection, ids, documents, metasJson)
+    val mjson = metas.map { m =>
+      Json.obj(m.toSeq.map { case (k, v) => (k, Json.fromString(v)) }*)
+    }
+    addDocuments(collection, ids, docs, mjson)
 
   def addDocuments(
       collection: String,
       ids: List[String],
-      documents: List[String],
-      metadatas: List[Json]
+      docs: List[String],
+      metas: List[Json]
   ): Either[String, Json] =
-    import cats.effect.unsafe.implicits.global
+    val embOpt: Option[List[Array[Float]]] =
+      if embeddingEngine.mode == EmbeddingMode.None then None
+      else
+        try embeddingEngine.embed(docs).unsafeRunSync()
+        catch case _: Throwable => None
 
-    val batchSize =
-      sys.env.get("SIE_CHROMA_BATCH_SIZE").flatMap(_.toIntOption).getOrElse(1)
+    val embJson =
+      embOpt.map { list =>
+        Json.fromValues(list.map { vec =>
+          Json.fromValues(vec.toList.map(Json.fromFloatOrString))
+        })
+      }
 
-    val grouped = ids.zip(documents).zip(metadatas).grouped(batchSize).toList
+    val payload =
+      Json.obj(
+        "ids"        -> Json.fromValues(ids.map(Json.fromString)),
+        "documents"  -> Json.fromValues(docs.map(Json.fromString)),
+        "metadatas"  -> Json.fromValues(metas)
+      ).deepMerge(
+        embJson.map(e => Json.obj("embeddings" -> e)).getOrElse(Json.obj())
+      )
 
-    val results = grouped.zipWithIndex.map { case (group, batchIndex) =>
-      val batchIds   = group.map(_._1._1)
-      val batchDocs  = group.map(_._1._2)
-      val batchMetas = group.map(_._2)
+    postJson(s"collections/$collection/add", payload).unsafeRunSync()
 
-      val batchEmbs: Option[List[Array[Float]]] =
-        if embeddingEngine.mode == EmbeddingMode.None then None
-        else
-          try
-            embeddingEngine.embed(batchDocs).unsafeRunSync()
-          catch
-            case e: Throwable =>
-              println(s"[ChromaClient] EMBEDDING_EXCEPTION(batch=$batchIndex): ${e.getMessage}")
-              None
+  // -------------------------
+  // Passage conversion
+  // -------------------------
 
-      val embJson =
-        batchEmbs match
-          case None => None
-          case Some(list) =>
-            Some(Json.fromValues(list.map { vec =>
-              val floats: List[Float] = vec.toList
-              Json.fromValues(floats.map(f => Json.fromFloatOrString(f)))
-            }))
+  private def toRawPassages(resp: ChromaResponse): List[RawPassage] =
+    val r = resp.results
+    val ids = r.ids.headOption.getOrElse(Nil)
+    val docs = r.documents.headOption.getOrElse(Nil)
+    val metas = r.metadatas.headOption.getOrElse(Nil)
+    val dists = r.distances.headOption.getOrElse(Nil)
 
-      val payload =
-        Json.obj(
-          "collection" -> Json.fromString(collection),
-          "ids"        -> Json.fromValues(batchIds.map(Json.fromString)),
-          "documents"  -> Json.fromValues(batchDocs.map(Json.fromString)),
-          "metadatas"  -> Json.fromValues(batchMetas)
-        ).deepMerge(
-          embJson.map(e => Json.obj("embeddings" -> Json.fromValues(e.asArray.get))).getOrElse(Json.obj())
-        )
+    ids.zipWithIndex.map { case (id, idx) =>
+      val text = docs.lift(idx).getOrElse("")
+      val meta = metas.lift(idx)
+        .flatMap(_.asObject.map(_.toMap.map { case (k, v) => (k, v.toString) }))
+        .getOrElse(Map.empty)
 
-      val payloadStr = payload.noSpaces
-      val size = payloadStr.getBytes(StandardCharsets.UTF_8).length
-      println(s"[ChromaClient] Batch $batchIndex payload size: $size")
+      val dist = dists.lift(idx).getOrElse(Double.MaxValue)
 
-      Thread.sleep(50)
-
-      postJson(s"collections/$collection/add", payload).unsafeRunSync() match
-        case Left(err) =>
-          println(s"[ChromaClient] Batch $batchIndex failed: $err")
-          Left(err)
-        case Right(json) =>
-          println(s"[ChromaClient] Batch $batchIndex OK")
-          Right(json)
+      RawPassage(id, text, meta, dist)
     }
 
-    results.find(_.isLeft) match
-      case Some(left) => left
-      case None       => results.lastOption.getOrElse(Right(Json.Null))
+  // -------------------------
+  // Search
+  // -------------------------
 
-  def search(collection: String, text: String, n: Int): Option[Json] =
-    embeddingEngine.mode match
-      case EmbeddingMode.None =>
-        // Embedding disabled → treat as empty result instead of failing
-        Some(
-          Json.obj(
-            "results" -> Json.arr()
+  /** Embedding-only search */
+  def search(collection: String, text: String, n: Int): Either[String, List[RawPassage]] =
+    if embeddingEngine.mode == EmbeddingMode.None then
+      Right(Nil)
+    else
+      val vecOpt = embeddingEngine.embed(List(text)).unsafeRunSync()
+      vecOpt match
+        case None => Right(Nil)
+        case Some(list) if list.isEmpty => Right(Nil)
+        case Some(list) =>
+          val emb = list.head
+          val payload =
+            Json.obj(
+              "query_embeddings" ->
+                Json.arr(Json.fromValues(emb.toList.map(Json.fromFloatOrString))),
+              "n_results" -> Json.fromInt(n),
+              "include" -> Json.arr(
+                Json.fromString("documents"),
+                Json.fromString("distances"),
+                Json.fromString("metadatas")
+              )
+            )
+
+          postJson(s"collections/$collection/query", payload).unsafeRunSync() match
+            case Left(err) => Left(err)
+            case Right(json) =>
+              json.as[ChromaResponse] match
+                case Left(decErr) => Left(decErr.getMessage)
+                case Right(resp)  => Right(toRawPassages(resp))
+
+  /** Hybrid search (query_texts + query_embeddings) */
+  def hybridSearch(collection: String, text: String, n: Int): Either[String, List[RawPassage]] =
+    val embOpt =
+      if embeddingEngine.mode == EmbeddingMode.None then None
+      else embeddingEngine.embed(List(text)).unsafeRunSync()
+
+    val payloadBase =
+      Json.obj(
+        "query_texts" -> Json.arr(Json.fromString(text)),
+        "include" -> Json.arr(
+          Json.fromString("documents"),
+          Json.fromString("distances"),
+          Json.fromString("metadatas")
+        ),
+        "n_results" -> Json.fromInt(n)
+      )
+
+    val payload =
+      embOpt match
+        case Some(list) if list.nonEmpty =>
+          val emb = list.head
+          payloadBase.deepMerge(
+            Json.obj(
+              "query_embeddings" ->
+                Json.arr(Json.fromValues(emb.toList.map(Json.fromFloatOrString)))
+            )
           )
-        )
-      case _ =>
-        val embOpt: Option[List[Array[Float]]] =
-          embeddingEngine.embed(List(text)).unsafeRunSync()
+        case _ =>
+          payloadBase
 
-        embOpt match
-          case None => None
-          case Some(emb) =>
-            if emb.isEmpty then None
-            else
-              val payload = Json.obj(
-                "collection" -> Json.fromString(collection),
-                "query_embeddings" ->
-                  Json.arr(
-                    Json.fromValues(
-                      emb.head.toList.map(f => Json.fromFloatOrString(f))
-                    )
-                  ),
-                "n_results" -> Json.fromInt(n)
-              )
-              postJson(s"collections/$collection/query", payload).map(_.toOption).unsafeRunSync()
-
-  def search(
-      collection: String,
-      text: String,
-      n: Int,
-      vec: Option[Array[Float]]
-  ): Option[Json] =
-    vec match
-      case None =>
-        // No vector → return empty results
-        Some(Json.obj("results" -> Json.arr()))
-      case Some(v) =>
-        val payload = Json.obj(
-          "collection" -> Json.fromString(collection),
-          "query_embeddings" ->
-            Json.arr(
-              Json.fromValues(
-                v.toList.map(f => Json.fromFloatOrString(f))
-              )
-            ),
-          "n_results" -> Json.fromInt(n)
-        )
-        postJson(s"collections/$collection/query", payload).map(_.toOption).unsafeRunSync()
+    postJson(s"collections/$collection/query", payload).unsafeRunSync() match
+      case Left(err) => Left(err)
+      case Right(json) =>
+        json.as[ChromaResponse] match
+          case Left(decErr) => Left(decErr.getMessage)
+          case Right(resp)  => Right(toRawPassages(resp))
 
 object ChromaClient:
-  def fromEnv(embeddingEngine: EmbeddingEngine): ChromaClient =
-    val endpoint = sys.env.getOrElse("SIE_EMBEDDING_ENDPOINT", "http://sie-embedding:8081")
-    new ChromaClient(endpoint, embeddingEngine)
+  def fromEnv(embedding: EmbeddingEngine): ChromaClient =
+    val endpoint =
+      sys.env.getOrElse("SIE_EMBEDDING_ENDPOINT", "http://sie-embedding:8081")
+    new ChromaClient(endpoint, embedding)
