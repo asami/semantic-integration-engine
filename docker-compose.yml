@@ -1,57 +1,95 @@
-version: "3.9"
-
 services:
+
   fuseki:
     image: stain/jena-fuseki:4.8.0
     container_name: fuseki
+    platform: linux/amd64
     ports:
       - "9030:3030"
-
-  chromadb:
-    image: chromadb/chroma:latest
-    container_name: chromadb
-    ports:
-      - "9040:8000"
     volumes:
-      - chroma_data:/chroma
+      - ./fuseki/config.ttl:/fuseki/config.ttl
+      - ./fuseki/shiro.ini:/fuseki/shiro.ini
+      - ./fuseki/databases:/fuseki/databases
+    networks:
+      - sie-network
 
-  init-chroma:
-    image: python:3.11-slim
-    depends_on: [chromadb]
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "
-      pip install chromadb requests &&
-      curl -L -o /tmp/site.jsonld https://www.simplemodeling.org/site.jsonld &&
-      python3 /tmp/init-chroma.py
-      "
-    volumes:
-      - ./init/init-chroma.py:/tmp/init-chroma.py
+  # chromadb:
+  #   # Disabled: Local ChromaDB inside sie-embedding (PersistentClient)
+  #   # Keeping placeholder for future standalone mode
+  #   image: chromadb/chroma:0.0.0
+  #   container_name: chromadb-disabled
+  #   ports:
+  #     - "9040:8000"
+  #   networks:
+  #     - sie-network
+
+  # init-chroma:
+  #   image: python:3.11-slim
+  #   container_name: init-chroma
+  #   environment:
+  #     CHROMA_URL: "http://sie-embedding:8081"
+  #     # OPENAI_API_KEY: "${OPENAI_API_KEY}"
+  #   volumes:
+  #     - ./init/init-chroma.py:/init-chroma.py
+  #   entrypoint: ["python", "/init-chroma.py"]
+  #   depends_on:
+  #     - chromadb
+  #   networks:
+  #     - sie-network
 
   init-fuseki:
     image: curlimages/curl:8.10.1
-    depends_on: [fuseki]
-    entrypoint: ["/bin/sh", "-c"]
-    command: >
-      "
-      curl -L -o /tmp/site.jsonld https://www.simplemodeling.org/site.jsonld &&
-      curl -X POST -H 'Content-Type: application/ld+json' \
-        --data-binary @/tmp/site.jsonld \
-        http://fuseki:3030/ds/data
-      "
+    container_name: init-fuseki
+    depends_on:
+      - fuseki
+    volumes:
+      - ./init/init-fuseki.sh:/init-fuseki.sh
+    entrypoint: ["/bin/sh", "/init-fuseki.sh"]
+    networks:
+      - sie-network
+
+  sie-embedding:
+    build: ./src/main/python/embedding
+    container_name: sie-embedding
+    ports:
+      - "8081:8081"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 5s
+      timeout: 2s
+      retries: 20
+      start_period: 5s
+    networks:
+      - sie-network
 
   sie:
     build:
       context: .
       dockerfile: Dockerfile
     container_name: sie
-    depends_on: [fuseki, chromadb, init-fuseki, init-chroma]
+    depends_on:
+      fuseki:
+        condition: service_started
+      init-fuseki:
+        condition: service_completed_successfully
+      # init-chroma:
+      #   condition: service_completed_successfully
+      sie-embedding:
+        condition: service_healthy
     ports:
       - "9050:9050"
     environment:
       FUSEKI_URL: http://fuseki:3030/ds
-      CHROMA_URL: http://chromadb:8000
+      CHROMA_URL: http://sie-embedding:8081
       SIESERVER_PORT: 9050
+      # OPENAI_API_KEY: "${OPENAI_API_KEY}"
+      SIE_EMBEDDING_MODE: "oss"
+      SIE_OSS_EMBEDDING_URL: "http://sie-embedding:8081/embed"
+    networks:
+      - sie-network
 
-volumes:
-  chroma_data:
+# volumes:
+#  chroma_data:
+
+networks:
+  sie-network:

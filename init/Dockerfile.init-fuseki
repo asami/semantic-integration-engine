@@ -1,0 +1,10 @@
+FROM curlimages/curl:8.10.1
+
+USER root
+WORKDIR /app
+
+# init-fuseki.sh だけをコンテナに入れる
+COPY init-fuseki.sh /app/init-fuseki.sh
+RUN chmod +x /app/init-fuseki.sh
+
+ENTRYPOINT ["/app/init-fuseki.sh"]

@@ -7,7 +7,7 @@ import org.simplemodeling.sie.http.SimpleHttpClient
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec.  4, 2025
+ * @version Dec.  5, 2025
  * @author  ASAMI, Tomoharu
  */
 class FusekiClient(endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://localhost:3030/ds")):
@@ -54,6 +54,41 @@ class FusekiClient(endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://lo
           FusekiConcept(uri, label, label, desc)
       }
     }
+
+  /**
+   * Execute a SPARQL query and return flattened bindings.
+   * Each binding row is represented as Map[String, String].
+   */
+  def queryFlat(sparql: String): IO[List[Map[String, String]]] =
+    for
+      resp <- SimpleHttpClient.post(
+        url,
+        sparql,
+        Map(
+          "Content-Type" -> "application/sparql-query",
+          "Accept"       -> "application/sparql-results+json"
+        )
+      )
+    yield
+      io.circe.parser.parse(resp.body).toOption
+        .flatMap { json =>
+          val cursor = json.hcursor
+          cursor
+            .downField("results")
+            .downField("bindings")
+            .as[List[Json]]
+            .toOption
+        }
+        .getOrElse(Nil)
+        .flatMap { binding =>
+          val c = binding.hcursor
+          val keys = c.keys.getOrElse(Nil)
+          val row: Map[String, String] =
+            keys.flatMap { key =>
+              c.downField(key).downField("value").as[String].toOption.map(v => key -> v)
+            }.toMap
+          if row.isEmpty then None else Some(row)
+        }
 
 case class FusekiConcept(
   uri: String,

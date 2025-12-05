@@ -1,0 +1,80 @@
+version: "3.9"
+
+services:
+
+  #######################################################################
+  # FUSEKI — RDF / SPARQL server
+  #######################################################################
+  fuseki:
+    image: stain/jena-fuseki:4.8.0
+    container_name: sie-fuseki
+    platform: linux/amd64
+    ports:
+      - "9030:3030"
+    volumes:
+      # Persist the TDB database after initialization
+      - ./fuseki/databases:/fuseki/databases
+    restart: unless-stopped
+
+
+  #######################################################################
+  # INIT-FUSEKI — Loads SimpleModeling RDF into Fuseki (one-shot job)
+  #######################################################################
+  init-fuseki:
+    image: ghcr.io/asami/init-fuseki:latest
+    container_name: sie-init-fuseki
+    depends_on:
+      fuseki:
+        condition: service_started
+    restart: "no"   # Run once and exit
+    networks:
+      - sie-net
+
+
+  #######################################################################
+  # SIE-EMBEDDING — Lightweight embedding service
+  #######################################################################
+  sie-embedding:
+    image: ghcr.io/asami/sie-embedding:latest
+    container_name: sie-embedding
+    ports:
+      - "8081:8081"
+    restart: unless-stopped
+    networks:
+      - sie-net
+
+
+  #######################################################################
+  # SIE — Semantic Integration Engine (HTTP + MCP WebSocket)
+  #######################################################################
+  sie:
+    image: ghcr.io/asami/sie:latest
+    container_name: sie
+    depends_on:
+      fuseki:
+        condition: service_started
+      init-fuseki:
+        condition: service_completed_successfully
+      sie-embedding:
+        condition: service_started
+
+    ports:
+      - "9050:9050"   # HTTP RAG API
+      - "9051:9051"   # MCP WebSocket API
+
+    environment:
+      # ---- SIE configuration ----
+      FUSEKI_URL: http://fuseki:3030/ds
+      SIE_EMBEDDING_MODE: "oss"
+      SIE_OSS_EMBEDDING_URL: http://sie-embedding:8081/embed
+
+      # ---- MCP WebSocket port ----
+      SIE_MCP_PORT: 9051
+
+    restart: unless-stopped
+    networks:
+      - sie-net
+
+
+networks:
+  sie-net:

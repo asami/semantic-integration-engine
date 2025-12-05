@@ -18,7 +18,7 @@ import cats.syntax.semigroupk.*
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec.  4, 2025
+ * @version Dec.  5, 2025
  * @author  ASAMI, Tomoharu
  */
 class HttpRagServer(service: RagService, host: String, port: Int):
@@ -47,7 +47,11 @@ class HttpRagServer(service: RagService, host: String, port: Int):
         result <- IO(service.run(query))
                     .handleError { e =>
                       println(s"[HttpRagServer] error in /sie/query: ${e.toString}")
-                      RagResult(Nil, Nil)
+                      RagResult(
+                        concepts = Nil,
+                        passages = Nil,
+                        graph = org.simplemodeling.sie.service.GraphResult(Nil, Nil)
+                      )
                     }
         resp  <- Ok(result)
       yield resp

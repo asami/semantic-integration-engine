@@ -10,7 +10,6 @@ services:
       - ./fuseki/config.ttl:/fuseki/config.ttl
       - ./fuseki/shiro.ini:/fuseki/shiro.ini
       - ./fuseki/databases:/fuseki/databases
-      - ./ontology:/ontology
     networks:
       - sie-network
 
@@ -45,7 +44,6 @@ services:
       - fuseki
     volumes:
       - ./init/init-fuseki.sh:/init-fuseki.sh
-      - ./ontology:/ontology
     entrypoint: ["/bin/sh", "/init-fuseki.sh"]
     networks:
       - sie-network
