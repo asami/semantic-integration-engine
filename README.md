@@ -1,140 +1,140 @@
-# Semantic Integration Engine — Fuseki + ChromaDB + SIE Server
+# Semantic Integration Engine (SIE)
 
-This repository provides a fully containerized Semantic Integration Engine (SIE),
-combining RDF-based knowledge graphs and vector retrieval for advanced
-AI-assisted modeling and knowledge integration.
+The **Semantic Integration Engine (SIE)** is a hybrid semantic–vector
+retrieval engine designed to integrate structured knowledge graphs,
+symbolic reasoning, and modern embedding models.
 
-The system consists of:
+SIE can be used as a **stand-alone RAG engine**, providing:
+- High-quality text–to–knowledge retrieval
+- REST and MCP interfaces for AI agents
+- Hybrid symbolic + vector reasoning
 
-- **SIE Server** (Scala) — REST-based Semantic Integration service
-- **MCP Client** — allows ChatGPT to access the RAG backend
-- **Fuseki** — RDF triple store
-- **ChromaDB** — Vector database
+However, SIE is also developed as part of the  
+**SimpleModeling.org / SmartDox ecosystem**, where it achieves its
+full potential.
 
-All components run inside Docker containers.
+When combined with:
+- **SmartDox** (structured, bilingual, semantically enriched documents)
+- **SimpleModeling.org Knowledge Graph** (RDF/JSON-LD based BoK)
 
+SIE becomes a *knowledge-grounded AI engine* capable of:
+- Understanding domain models and conceptual structures
+- Answering questions with explicit semantic context
+- Performing retrieval that respects ontology, categories, references,
+  and document structure
+- Supporting AI-assisted modeling, documentation, and development workflows
 
-## ✨ User Installation (Recommended)
+In short:
+**SIE works standalone, but it becomes dramatically more powerful
+when integrated with the semantic knowledge base of SimpleModeling.org.**
 
-You do **NOT** need to clone this repository.
+---
 
-Download the file:
+## 🌐 Architecture Overview
 
-    docker-compose.yml
+    ┌───────────────────────────────────────────────────────────┐
+    │                   Semantic Integration Engine (SIE)       │
+    │                                                           │
+    │   ┌──────────────┐     ┌────────────────────────────┐    │
+    │   │  Fuseki RDF  │<----│  init-fuseki (one-shot KG) │    │
+    │   └──────────────┘     └────────────────────────────┘    │
+    │          ↑                                                 │
+    │          │ SPARQL                                          │
+    │          │                                                 │
+    │   ┌───────────────┐                                       │
+    │   │ sie-embedding │----→ vector search                     │
+    │   └───────────────┘                                       │
+    │                                                           │
+    │ REST API: /sie/query                                      │
+    │ MCP API : ws://host:9051/mcp                              │
+    └───────────────────────────────────────────────────────────┘
 
-Then start:
+SIE integrates both symbolic and embedding-based retrieval to produce
+context-aware answers grounded in the SimpleModeling knowledge graph.
 
-    docker compose up -d
+---
 
-Services:
+## 🔧 Build & Run (Development)
 
-    Fuseki     → http://localhost:9030
-    ChromaDB   → http://localhost:9040
-    SIE Server → http://localhost:9050
+    sbt clean assembly
 
-REST endpoint:
+The fat JAR is generated at:
 
-    http://localhost:9050/sie/query
+    dist/semantic-integration-engine.jar
 
+    java -jar dist/semantic-integration-engine.jar
 
-## 🧠 Using the MCP Client with ChatGPT
+Environment variables:
 
-Create an `mcpc` script:
+- `FUSEKI_URL` – RDF endpoint (default: http://localhost:3030/ds)
+- `SIE_EMBEDDING_URL` – embedding backend
+- `SIESERVER_PORT` – REST/MCP server port
 
-    #!/bin/bash
-    docker exec -i sie \
-      java -cp /app/semantic-integration-engine.jar \
-      org.simplemodeling.sie.mcp.McpClientMain
+---
 
-Make it executable:
+## 🐳 Build Docker Image (using existing Dockerfile)
 
-    chmod +x mcpc
+    docker build -t ghcr.io/asami/sie:latest .
+    docker push ghcr.io/asami/sie:latest
 
-Register in ChatGPT as an MCP command:
+---
 
-    ./mcpc
+# Demo Environment (Optional)
 
+A full demo environment—including Fuseki, the embedding backend, automatic
+RDF loader, and SIE itself—is provided via:
 
-## 🚀 Deployment Modes (5 Variants)
+- `docker-compose.demo.yml`
+- GHCR-hosted images:
+    - `ghcr.io/asami/init-fuseki:latest`
+    - `ghcr.io/asami/sie-embedding:latest`
+    - `ghcr.io/asami/sie:latest`
 
-Select one of the following docker-compose files:
+The demo is designed for:
+- evaluating the hybrid retrieval pipeline
+- exploring semantic queries over the SimpleModeling knowledge graph
+- demonstrating MCP tool integration with ChatGPT
+- reproducing examples from SimpleModeling.org articles
 
-    docker-compose.yml
-    docker-compose.plain.yml
-    docker-compose.project.yml
-    docker-compose.sm-project.yml
-    docker-compose.dev.yml
+---
 
-### 1. SimpleModeling Standard Mode
-Loads SimpleModeling.org knowledge.
+## 🚀 Running the Demo
 
-    docker compose -f docker-compose.yml up -d
+    docker compose -f docker-compose.demo.yml up -d
 
-### 2. Plain Mode (Empty)
-Starts with no initial data.
+Available endpoints:
 
-    docker compose -f docker-compose.plain.yml up -d
+- Fuseki UI: http://localhost:9030
+- SIE REST API: http://localhost:9050
+- MCP WebSocket: ws://localhost:9051/mcp
 
-### 3. Project-only Mode
-Loads your project’s BoK only.
+### Example REST query
 
-    docker compose -f docker-compose.project.yml up -d
+    curl -X POST http://localhost:9050/sie/query \
+      -H "Content-Type: application/json" \
+      -d '{"query": "Explain SimpleModelObject."}'
 
-Requires:
+### Example MCP session (wscat)
 
-    project/site.jsonld
+    wscat -c ws://localhost:9051/mcp
 
-### 4. SM + Project Hybrid Mode
-Loads:
-- SimpleModeling.org knowledge
-- Your project’s BoK
+    {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}
 
-    docker compose -f docker-compose.sm-project.yml up -d
+---
 
-### 5. Development Mode
-Uses the local JAR under `dist/`.
+## 📄 License
 
-    docker compose -f docker-compose.dev.yml up -d
+### Software (code)
+Licensed under the **Apache License 2.0**  
+https://www.apache.org/licenses/LICENSE-2.0
 
+### Documentation (text, examples, diagrams)
+Licensed under **CC-BY-SA 4.0**  
+https://creativecommons.org/licenses/by-sa/4.0/
 
-## 👨‍💻 Development Setup
+---
 
-Clone the repository:
+## 🤝 Contributions
 
-    git clone https://github.com/YOURNAME/semantic-integration-engine.git
-    cd semantic-integration-engine
-
-Build the JAR:
-
-    sbt assembly
-    cp target/scala-3.4.2/semantic-integration-engine.jar dist/
-
-Start development environment:
-
-    docker compose -f docker-compose.dev.yml up -d
-
-
-## 🏗️ Publishing the Production Image (GHCR)
-
-    docker build -t ghcr.io/YOURNAME/semantic-integration-engine:2025-11-26 .
-    docker push ghcr.io/YOURNAME/semantic-integration-engine:2025-11-26
-
-
-## 📁 Project Structure
-
-    semantic-integration-engine/
-      docker-compose.yml
-      docker-compose.plain.yml
-      docker-compose.project.yml
-      docker-compose.sm-project.yml
-      docker-compose.dev.yml
-      dist/semantic-integration-engine.jar
-      src/main/scala/...
-      Dockerfile
-      mcpc
-      README.md
-
-
-## License
-
-Apache-2.0
+Contributions, issues, and feature requests are welcome.  
+Please open an issue or pull request on GitHub.
