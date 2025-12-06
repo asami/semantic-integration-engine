@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.3",
+    version := "0.0.3.1",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -123,13 +123,13 @@ dockerPush := {
   val latest = "ghcr.io/asami/sie:latest"
   val verTag = s"ghcr.io/asami/sie:${version.value}"
 
-  log.info(s"Pushing $latest ...")
-  if (sys.process.Process(s"docker push $latest").! != 0)
-    sys.error("Push latest failed")
-
   log.info(s"Pushing $verTag ...")
   if (sys.process.Process(s"docker push $verTag").! != 0)
     sys.error("Push version tag failed")
+
+  log.info(s"Pushing $latest ...")
+  if (sys.process.Process(s"docker push $latest").! != 0)
+    sys.error("Push latest failed")
 
   log.info("Push completed.")
 }
