@@ -1,10 +1,14 @@
+import sbtbuildinfo.BuildInfoPlugin.autoImport._
+
 ThisBuild / scalaVersion := "3.4.2"
+
+enablePlugins(BuildInfoPlugin)
 
 lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.2",
+    version := "0.0.3",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -30,6 +34,17 @@ lazy val root = (project in file("."))
       "org.jsoup" % "jsoup" % "1.18.1"
     ),
 
+    // BuildInfo (dynamic version/name for MCP)
+    buildInfoKeys := Seq[BuildInfoKey](
+      name,
+      version,
+      scalaVersion,
+      sbtVersion,
+      BuildInfoKey.map(homepage){ case (_, url) => "homepage" -> url.toString },
+      BuildInfoKey.map(organizationName){ case (_, org) => "author" -> org }
+    ),
+    buildInfoPackage := "org.simplemodeling.sie",
+
     // assembly settings
     Compile / mainClass := Some("org.simplemodeling.sie.server.RagServerMain"),
     assembly / assemblyJarName := "semantic-integration-engine.jar",
@@ -45,11 +60,19 @@ lazy val root = (project in file("."))
         MergeStrategy.concat
       case x =>
         MergeStrategy.first
-    }
+    },
+
+    // Enable JVM remote debugging (attach from IntelliJ/Metals)
+    run / fork := true,
+    run / javaOptions ++= Seq(
+      "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
+    ),
   )
 
-// sbt-assembly plugin (必要)
 addCommandAlias("deploy", ";clean;assembly;copyJar")
+addCommandAlias("dev",  "set run / javaOptions += \"-Dconfig.file=src/main/resources/application.dev.conf\"; run")
+addCommandAlias("devrs","set javaOptions += \"-Dconfig.file=src/main/resources/application.dev.conf\"; reStart")
+addCommandAlias("rsk", "reStop")
 
 lazy val copyJar = taskKey[Unit]("Copy fat jar to dist/")
 
