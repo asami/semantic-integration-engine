@@ -1,0 +1,11 @@
+{
+  "type": "initialized",
+  "protocolVersion": "1.0",
+  "server": {
+    "name": "simplemodeling-sie",
+    "version": "__VERSION__"
+  },
+  "capabilities": {
+    "tools": { "enabled": true }
+  }
+}

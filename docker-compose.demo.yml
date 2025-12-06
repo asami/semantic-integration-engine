@@ -6,27 +6,12 @@ services:
   # FUSEKI — RDF / SPARQL server
   #######################################################################
   fuseki:
-    image: stain/jena-fuseki:4.8.0
+    image: ghcr.io/asami/preload-fuseki:latest
     container_name: sie-fuseki
     platform: linux/amd64
     ports:
       - "9030:3030"
-    volumes:
-      # Persist the TDB database after initialization
-      - ./fuseki/databases:/fuseki/databases
     restart: unless-stopped
-
-
-  #######################################################################
-  # INIT-FUSEKI — Loads SimpleModeling RDF into Fuseki (one-shot job)
-  #######################################################################
-  init-fuseki:
-    image: ghcr.io/asami/init-fuseki:latest
-    container_name: sie-init-fuseki
-    depends_on:
-      fuseki:
-        condition: service_started
-    restart: "no"   # Run once and exit
     networks:
       - sie-net
 
@@ -53,8 +38,6 @@ services:
     depends_on:
       fuseki:
         condition: service_started
-      init-fuseki:
-        condition: service_completed_successfully
       sie-embedding:
         condition: service_started
 

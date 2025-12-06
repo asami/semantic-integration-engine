@@ -1,29 +1,32 @@
 {
   "schema_version": "v1",
-  "name": "simplemodeling_sie",
-  "version": "2025-12-04",
-  "description": "Semantic Integration Engine for SimpleModeling.org. Provides semantic search across SmartDox, RDF, and the SimpleModeling Knowledge Graph.",
+  "name": "__NAME__",
+  "version": "__VERSION__",
+  "description": "Semantic Integration Engine for SimpleModeling.org. Provides unified semantic search across SmartDox, RDF, SKOS, ontology graphs, and the SimpleModeling Knowledge Graph.",
+
   "interfaces": {
     "websocket": {
       "url": "ws://localhost:9050/mcp",
-      "protocol": "jsonrpc-2.0"
+      "protocol": "mcp"
     }
   },
+
   "capabilities": {
     "tools": {
       "enabled": true
     }
   },
+
   "tools": [
     {
       "name": "tools.sie.query",
-      "description": "Semantic search across SmartDox, RDF, and SimpleModeling Knowledge Graph.",
+      "description": "Semantic search across SmartDox, RDF, ontology, and vector embeddings. Returns unified SemanticRAG results: concept matches, passages, summaries, and knowledge graph snippets.",
       "input_schema": {
         "type": "object",
         "properties": {
           "query": {
             "type": "string",
-            "description": "Natural language query, glossary term, page title, or concept name."
+            "description": "Natural language query, glossary term, page title, or concept name. Example: 'What is SimpleModelObject?'"
           },
           "limit": {
             "type": "integer",
@@ -31,15 +34,69 @@
             "maximum": 20,
             "default": 5,
             "description": "Maximum number of passages to retrieve."
+          },
+          "include_graph": {
+            "type": "boolean",
+            "default": true,
+            "description": "If true, include graph-neighborhood results for related concepts."
           }
         },
         "required": ["query"]
       }
+    },
+    {
+      "name": "tools.sie.explainConcept",
+      "description": "Explain a single concept identified by its URI. Returns label, definitions, SKOS relations, and its local RDF neighborhood.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "description": "Fully qualified concept URI. Example: 'https://www.simplemodeling.org/simplemodelingorg/ontology/0.1-SNAPSHOT#SimpleModelObject'"
+          }
+        },
+        "required": ["uri"]
+      }
+    },
+    {
+      "name": "tools.sie.getNeighbors",
+      "description": "Retrieve the local RDF/SKOS neighborhood of a concept: broader, narrower, related, domain-specific relationships, state-machine transitions, component relations, and more.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "uri": {
+            "type": "string",
+            "description": "Concept URI from the SimpleModeling Knowledge Graph."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20,
+            "description": "Maximum number of neighbor nodes to return."
+          }
+        },
+        "required": ["uri"]
+      }
     }
   ],
+
   "metadata": {
     "author": "ASAMI, Tomoharu",
     "homepage": "https://www.simplemodeling.org/",
-    "license": "Apache-2.0"
+    "license": "Apache-2.0",
+    "description_long": "This MCP manifest describes the SimpleModeling Semantic Integration Engine (SIE), capable of hybrid semantic retrieval combining RDF, SKOS, SPARQL, ontology reasoning, SmartDox semantic index, and vector search. It provides a unified interface for ChatGPT-based knowledge exploration, conceptual explanation, and semantic graph traversal.",
+    "description_long_ja": "本MCPマニフェストは、SimpleModeling Semantic Integration Engine (SIE) が提供する機能を ChatGPT に正しく伝えるための自己記述ファイルです。SIE は RDF・SKOS・SPARQL・オントロジー推論・SmartDox セマンティックインデックス・ベクトル検索を統合したハイブリッド検索を提供しており、本マニフェストにより ChatGPT はこれらの機能を理解し、適切なツール呼び出しを自律的に行えるようになります。SemanticRAG の構造や概念説明、近傍探索といった高度な知識処理を利用者に代わって実行するため、manifest の情報量は推論精度と操作性を大きく向上させます。",
+    "keywords": [
+      "SimpleModeling",
+      "Semantic Search",
+      "Knowledge Graph",
+      "RDF",
+      "SKOS",
+      "SmartDox",
+      "Ontology",
+      "Semantic RAG",
+      "MCP"
+    ]
   }
 }

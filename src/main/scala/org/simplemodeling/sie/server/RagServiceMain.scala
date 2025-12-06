@@ -34,6 +34,10 @@ object RagServerMain extends IOApp.Simple:
 
   override def run: IO[Unit] =
     val cfg    = AppConfig.load()
+    val isDev = cfg.server.mode == ServerMode.Dev
+    if isDev then
+      println("[RagServerMain] DEV MODE: Skipping Chroma/Fuseki initialization and HtmlIndexer.")
+
     val fuseki = FusekiClient(cfg.fuseki.endpoint)
 
     for
@@ -47,72 +51,79 @@ object RagServerMain extends IOApp.Simple:
       // is not reachable.
       chroma = ChromaClient(cfg.chroma.endpoint, embedding)
 
-      _ <- IO.println(
-        s"[RagServerMain] Ensuring Chroma collection '${HtmlIndexer.CollectionName}' exists..."
-      )
-
-      // -------------------------------------------------------
-      // 2. Collection existence (blocking but non-fatal)
-      // -------------------------------------------------------
-      exists <- IO.pure(chroma.collectionExists(HtmlIndexer.CollectionName))
-
-      _ <- exists match
-        case Right(true) =>
-          IO.println("[RagServerMain] Collection already exists.")
-
-        case Right(false) =>
-          IO.println("[RagServerMain] Creating collection (non-fatal)...") *>
-            IO {
-              chroma.createCollection(HtmlIndexer.CollectionName) match
-                case Right(_)  =>
-                  println("[RagServerMain] Collection created.")
-                case Left(err) =>
-                  println("[RagServerMain] createCollection failed (continuing): " + err)
-            }
-
-        case Left(err) =>
-          IO.println(
-            s"[RagServerMain] collectionExists failed (degraded mode, continuing): $err"
-          )
-
-      // -------------------------------------------------------
-      // 3. Initial indexing (non-fatal)
-      // -------------------------------------------------------
-      forceIndex = sys.env
-        .get("SIE_INDEX_ON_START")
-        .exists(_.equalsIgnoreCase("true"))
-
       _ <-
-        if forceIndex then
-          IO.println("[RagServerMain] Forced indexing (non-fatal)...") *>
-            runIndexInitializer(fuseki, chroma, embedding)
-            *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
-            *> startHtmlIndexer(chroma)
+        if isDev then
+          // Skip all indexing and background tasks
+          IO.unit
         else
-          exists match
-            case Right(false) =>
-              IO.println(
-                "[RagServerMain] Initial indexing because collection did not exist (non-fatal)..."
-              ) *> runIndexInitializer(fuseki, chroma, embedding)
-                *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
-                *> startHtmlIndexer(chroma)
+          for
+            _ <- IO.println(
+              s"[RagServerMain] Ensuring Chroma collection '${HtmlIndexer.CollectionName}' exists..."
+            )
 
-            case Right(true) =>
-              IO.println(
-                "[RagServerMain] Skipping IndexInitializer (collection already exists)."
-              )
-                *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
-                *> startHtmlIndexer(chroma)
+            // -------------------------------------------------------
+            // 2. Collection existence (blocking but non-fatal)
+            // -------------------------------------------------------
+            exists <- IO.pure(chroma.collectionExists(HtmlIndexer.CollectionName))
 
-            case Left(_) =>
-              IO.println(
-                "[RagServerMain] Skipping IndexInitializer due to collection existence error."
-              )
+            _ <- exists match
+              case Right(true) =>
+                IO.println("[RagServerMain] Collection already exists.")
 
-      // -------------------------------------------------------
-      // 4. Start background recovery loop
-      // -------------------------------------------------------
-      _ <- BackgroundTasks.startRecoveryLoop(chroma, fuseki, embedding)
+              case Right(false) =>
+                IO.println("[RagServerMain] Creating collection (non-fatal)...") *>
+                  IO {
+                    chroma.createCollection(HtmlIndexer.CollectionName) match
+                      case Right(_)  =>
+                        println("[RagServerMain] Collection created.")
+                      case Left(err) =>
+                        println("[RagServerMain] createCollection failed (continuing): " + err)
+                  }
+
+              case Left(err) =>
+                IO.println(
+                  s"[RagServerMain] collectionExists failed (degraded mode, continuing): $err"
+                )
+
+            // -------------------------------------------------------
+            // 3. Initial indexing (non-fatal)
+            // -------------------------------------------------------
+            forceIndex = sys.env
+              .get("SIE_INDEX_ON_START")
+              .exists(_.equalsIgnoreCase("true"))
+
+            _ <-
+              if forceIndex then
+                IO.println("[RagServerMain] Forced indexing (non-fatal)...") *>
+                  runIndexInitializer(fuseki, chroma, embedding)
+                  *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
+                  *> startHtmlIndexer(chroma)
+              else
+                exists match
+                  case Right(false) =>
+                    IO.println(
+                      "[RagServerMain] Initial indexing because collection did not exist (non-fatal)..."
+                    ) *> runIndexInitializer(fuseki, chroma, embedding)
+                      *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
+                      *> startHtmlIndexer(chroma)
+
+                  case Right(true) =>
+                    IO.println(
+                      "[RagServerMain] Skipping IndexInitializer (collection already exists)."
+                    )
+                      *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
+                      *> startHtmlIndexer(chroma)
+
+                  case Left(_) =>
+                    IO.println(
+                      "[RagServerMain] Skipping IndexInitializer due to collection existence error."
+                    )
+
+            // -------------------------------------------------------
+            // 4. Start background recovery loop
+            // -------------------------------------------------------
+            _ <- BackgroundTasks.startRecoveryLoop(chroma, fuseki, embedding)
+          yield ()
 
       // -------------------------------------------------------
       // 5. Start HTTP RAG server
