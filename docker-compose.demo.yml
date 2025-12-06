@@ -33,7 +33,7 @@ services:
   # SIE — Semantic Integration Engine (HTTP + MCP WebSocket)
   #######################################################################
   sie:
-    image: ghcr.io/asami/sie:0.0.3.4
+    image: ghcr.io/asami/sie:0.0.3.5
     command:
       - "java"
       - "-Dconfig.resource=application.demo.conf"
