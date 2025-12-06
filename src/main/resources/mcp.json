@@ -53,6 +53,10 @@
           "uri": {
             "type": "string",
             "description": "Fully qualified concept URI. Example: 'https://www.simplemodeling.org/simplemodelingorg/ontology/0.1-SNAPSHOT#SimpleModelObject'"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Optional locale for explanation (IETF BCP47). Example: 'en', 'ja'. Default is 'en'."
           }
         },
         "required": ["uri"]

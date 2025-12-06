@@ -25,6 +25,7 @@ class HttpRagServer(service: RagService, host: String, port: Int):
 
   given EntityEncoder[IO, RagResult] = jsonEncoderOf
   given EntityEncoder[IO, Json] = jsonEncoderOf
+  given EntityEncoder[IO, ConceptExplanation] = jsonEncoderOf
 
   private def httpRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "health" =>
@@ -55,6 +56,25 @@ class HttpRagServer(service: RagService, host: String, port: Int):
                     }
         resp  <- Ok(result)
       yield resp
+
+    case req @ POST -> Root / "sie" / "explain" =>
+      for {
+        json      <- req.as[Json]
+        uri       <- IO(json.hcursor.get[String]("uri").getOrElse(""))
+        localeStr <- IO(json.hcursor.get[String]("locale").getOrElse("en"))
+        locale = java.util.Locale.forLanguageTag(localeStr)
+        result <- service.explainConcept(uri, locale)
+                    .handleError { e =>
+                      println(s"[HttpRagServer] error in /sie/explain: ${e.toString}")
+                      ConceptExplanation(
+                        uri         = uri,
+                        label       = Some("Error"),
+                        description = Some(e.toString),
+                        graph       = GraphResult(Nil, Nil)
+                      )
+                    }
+        resp <- Ok(result)
+      } yield resp
   }
 
   private def websocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =

@@ -9,6 +9,7 @@ import org.simplemodeling.sie.service.*
 import org.simplemodeling.sie.indexer.HtmlIndexer
 import org.simplemodeling.sie.embedding.*
 import org.simplemodeling.sie.init.IndexInitializer
+import org.simplemodeling.sie.concept.*
 
 /**
  * RagServerMain
@@ -28,7 +29,7 @@ import org.simplemodeling.sie.init.IndexInitializer
  *
  * @since   Nov. 20, 2025
  *          Nov. 25, 2025
- * @version Dec.  4, 2025
+ * @version Dec.  6, 2025
  */
 object RagServerMain extends IOApp.Simple:
 
@@ -128,7 +129,34 @@ object RagServerMain extends IOApp.Simple:
       // -------------------------------------------------------
       // 5. Start HTTP RAG server
       // -------------------------------------------------------
-      service = RagService(fuseki, chroma, embedding)
+      // Create ConceptMatcher and RagService inside an IO so we can continue
+      // sequencing in the for-comprehension.
+      service <- IO {
+        import org.simplemodeling.sie.concept.*
+
+        val context = RagService.Context.default
+
+        // Placeholder empty ConceptDictionary until real Fuseki loader is wired
+        val conceptDict = ConceptDictionary(Map.empty)
+
+        val dictionary: Map[String, String] = Map.empty // unified label → URI (may remain empty for now)
+
+        val embedSingle: String => cats.effect.IO[Array[Float]] = (s: String) =>
+          embedding.embed(List(s)).map(_.flatMap(_.headOption).getOrElse(Array.emptyFloatArray))
+
+        val embedSearch: Array[Float] => cats.effect.IO[List[(String, Double)]] = (_: Array[Float]) =>
+          IO.pure(Nil)
+
+        val conceptMatcher =
+          new ConceptMatcher(
+            conceptDict = conceptDict,
+            dictionary = dictionary,
+            embed = embedSingle,
+            embedSearch = embedSearch
+          )
+
+        RagService(context, fuseki, chroma, embedding, conceptMatcher)
+      }
 
       _ <- HttpRagServer(service, cfg.server.host, cfg.server.siePort).start
 

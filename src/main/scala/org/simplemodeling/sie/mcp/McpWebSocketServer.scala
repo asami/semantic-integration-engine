@@ -206,6 +206,27 @@ class McpWebSocketServer(service: RagService):
 
     patchedMeta
 
+  // ----------------------------------------
+  // Locale parsing helper (fallback to RagService context)
+  // ----------------------------------------
+  private def parseLocaleOrDefault(
+      raw: Option[String],
+      defaultLocale: java.util.Locale
+  ): java.util.Locale = {
+    raw match {
+      case Some(s) if s.trim.nonEmpty =>
+        val loc = java.util.Locale.forLanguageTag(s.trim)
+        // forLanguageTag returns a Locale even if invalid;
+        // detect empty language and fallback
+        if (loc.getLanguage == null || loc.getLanguage.isEmpty)
+          defaultLocale
+        else
+          loc
+      case _ =>
+        defaultLocale
+    }
+  }
+
   private def processJsonRpc(msg: String): IO[String] =
     parse(msg) match
       case Left(err) =>
@@ -252,11 +273,14 @@ class McpWebSocketServer(service: RagService):
                 }
 
               case "tools.sie.explainConcept" =>
-                val uri = args.get[String]("uri").getOrElse("")
-                service.explainConcept(uri).map { exp =>
+                val uri        = args.get[String]("uri").getOrElse("")
+                val localeOpt  = args.get[String]("locale").toOption
+                val locale     = parseLocaleOrDefault(localeOpt, service.context.defaultLocale)
+
+                service.explainConcept(uri, locale).map { exp =>
                   io.circe.Json.obj(
-                    "type" -> io.circe.Json.fromString("toolResult"),
-                    "tool" -> io.circe.Json.fromString("tools.sie.explainConcept"),
+                    "type"   -> io.circe.Json.fromString("toolResult"),
+                    "tool"   -> io.circe.Json.fromString("tools.sie.explainConcept"),
                     "result" -> exp.asJson
                   ).noSpaces
                 }
