@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.3.2",
+    version := "0.0.3.3",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -105,53 +105,22 @@ dockerBuild := {
   val latest = "ghcr.io/asami/sie:latest"
   val verTag = s"ghcr.io/asami/sie:${version.value}"
 
-  // build latest
-  val cmdLatest = s"docker build --no-cache -t $latest ."
-  if (sys.process.Process(cmdLatest).! != 0)
-    sys.error("Docker build (latest) failed")
+  val cmdBuild = s"docker build --no-cache -t $latest -t $verTag ."
+  if (sys.process.Process(cmdBuild).! != 0)
+    sys.error("Docker multi-tag build failed")
 
-  // tag versioned image
-  val cmdTag = s"docker tag $latest $verTag"
-  if (sys.process.Process(cmdTag).! != 0)
-    sys.error("Docker tag failed")
-
-  log.info(s"Docker image built: $latest and $verTag")
+  log.info(s"Docker images built: $latest and $verTag")
 }
 
 dockerPush := {
   val log = streams.value.log
-  val latest = "ghcr.io/asami/sie:latest"
-  val verTag = s"ghcr.io/asami/sie:${version.value}"
+  val repo = "ghcr.io/asami/sie"
 
-  // Tag the image with both latest and version tag before pushing
-  log.info(s"Tagging image with both $verTag and $latest ...")
-  val tagLatestCmd = s"docker tag $verTag $latest"
-  if (sys.process.Process(tagLatestCmd).! != 0)
-    sys.error("Docker tag (latest) failed")
+  log.info(s"Pushing all tags for $repo ...")
 
-  // Push both tags together by pushing the version tag
-  // (GHCR will recognize all tags pointing to the same digest)
-  log.info(s"Pushing both tags ($verTag and $latest) ...")
-  val pushOutput = new StringBuilder
-  val pushProcess = sys.process.Process(s"docker push $verTag") ! sys.process.ProcessLogger(
-    line => { pushOutput.append(line).append("\n"); log.info(line) },
-    line => { pushOutput.append(line).append("\n"); log.warn(line) }
-  )
-  if (pushProcess != 0) {
-    log.error(s"docker push failed:\n$pushOutput")
-    sys.error("Push to GHCR failed")
-  }
-
-  // Also explicitly push the latest tag to ensure it's registered
-  log.info(s"Pushing $latest tag explicitly ...")
-  val pushLatestOutput = new StringBuilder
-  val pushLatestProcess = sys.process.Process(s"docker push $latest") ! sys.process.ProcessLogger(
-    line => { pushLatestOutput.append(line).append("\n"); log.info(line) },
-    line => { pushLatestOutput.append(line).append("\n"); log.warn(line) }
-  )
-  if (pushLatestProcess != 0) {
-    log.warn(s"Note: $latest push may have failed or was redundant (same digest)")
-  }
+  val cmdPush = s"docker push $repo --all-tags"
+  if (sys.process.Process(cmdPush).! != 0)
+    sys.error("Push failed")
 
   log.info("Push completed.")
 }
