@@ -34,6 +34,11 @@ services:
   #######################################################################
   sie:
     image: ghcr.io/asami/sie:latest
+    command:
+      - "java"
+      - "-Dconfig.resource=application.demo.conf"
+      - "-jar"
+      - "/app/semantic-integration-engine.jar"
     container_name: sie
     depends_on:
       fuseki:

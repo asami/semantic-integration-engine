@@ -90,40 +90,59 @@ lazy val dockerDeploy = taskKey[Unit]("Assembly → Docker build → GHCR push")
 
 dockerBuild := {
   val log = streams.value.log
-  log.info("Building Docker image using Dockerfile...")
+  log.info("Preparing jar and building Docker image...")
 
-  val image = "ghcr.io/asami/sie:latest"
-  val cmd = s"docker build -t $image ."
-  val exit = sys.process.Process(cmd).!
+  // 1) Build fat jar
+  val jar = (Compile / assembly).value
 
-  if (exit != 0) sys.error("Docker build failed")
-  log.info(s"Docker image built: $image")
+  // 2) Copy into dist with a stable name
+  val distDir = baseDirectory.value / "dist"
+  IO.createDirectory(distDir)
+  val distJar = distDir / "semantic-integration-engine.jar"
+  IO.copyFile(jar, distJar, sbt.io.CopyOptions(overwrite = true, preserveLastModified = true, preserveExecutable = true))
+
+  // 3) Docker build using the Dockerfile (reads dist/)
+  val latest = "ghcr.io/asami/sie:latest"
+  val verTag = s"ghcr.io/asami/sie:${version.value}"
+
+  // build latest
+  val cmdLatest = s"docker build --no-cache -t $latest ."
+  if (sys.process.Process(cmdLatest).! != 0)
+    sys.error("Docker build (latest) failed")
+
+  // tag versioned image
+  val cmdTag = s"docker tag $latest $verTag"
+  if (sys.process.Process(cmdTag).! != 0)
+    sys.error("Docker tag failed")
+
+  log.info(s"Docker image built: $latest and $verTag")
 }
 
 dockerPush := {
   val log = streams.value.log
-  val image = "ghcr.io/asami/sie:latest"
-  log.info(s"Pushing $image ...")
+  val latest = "ghcr.io/asami/sie:latest"
+  val verTag = s"ghcr.io/asami/sie:${version.value}"
 
-  val cmd = s"docker push $image"
-  val exit = sys.process.Process(cmd).!
+  log.info(s"Pushing $latest ...")
+  if (sys.process.Process(s"docker push $latest").! != 0)
+    sys.error("Push latest failed")
 
-  if (exit != 0) sys.error("Docker push failed")
+  log.info(s"Pushing $verTag ...")
+  if (sys.process.Process(s"docker push $verTag").! != 0)
+    sys.error("Push version tag failed")
+
   log.info("Push completed.")
 }
 
 dockerDeploy := {
   val log = streams.value.log
-  log.info("Running assembly → docker build → docker push")
+  log.info("dockerDeploy: dockerBuild → dockerPush")
 
-  // fat-jar を作成
-  (Compile / assembly).value
-
-  // docker build
+  // 1) Build image (includes assembly + dist copy)
   dockerBuild.value
 
-  // docker push
+  // 2) Push image
   dockerPush.value
 
-  log.info("Deployment completed.")
+  log.info("dockerDeploy completed.")
 }
