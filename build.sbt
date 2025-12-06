@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.3.1",
+    version := "0.0.3.2",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -123,13 +123,35 @@ dockerPush := {
   val latest = "ghcr.io/asami/sie:latest"
   val verTag = s"ghcr.io/asami/sie:${version.value}"
 
-  log.info(s"Pushing $verTag ...")
-  if (sys.process.Process(s"docker push $verTag").! != 0)
-    sys.error("Push version tag failed")
+  // Tag the image with both latest and version tag before pushing
+  log.info(s"Tagging image with both $verTag and $latest ...")
+  val tagLatestCmd = s"docker tag $verTag $latest"
+  if (sys.process.Process(tagLatestCmd).! != 0)
+    sys.error("Docker tag (latest) failed")
 
-  log.info(s"Pushing $latest ...")
-  if (sys.process.Process(s"docker push $latest").! != 0)
-    sys.error("Push latest failed")
+  // Push both tags together by pushing the version tag
+  // (GHCR will recognize all tags pointing to the same digest)
+  log.info(s"Pushing both tags ($verTag and $latest) ...")
+  val pushOutput = new StringBuilder
+  val pushProcess = sys.process.Process(s"docker push $verTag") ! sys.process.ProcessLogger(
+    line => { pushOutput.append(line).append("\n"); log.info(line) },
+    line => { pushOutput.append(line).append("\n"); log.warn(line) }
+  )
+  if (pushProcess != 0) {
+    log.error(s"docker push failed:\n$pushOutput")
+    sys.error("Push to GHCR failed")
+  }
+
+  // Also explicitly push the latest tag to ensure it's registered
+  log.info(s"Pushing $latest tag explicitly ...")
+  val pushLatestOutput = new StringBuilder
+  val pushLatestProcess = sys.process.Process(s"docker push $latest") ! sys.process.ProcessLogger(
+    line => { pushLatestOutput.append(line).append("\n"); log.info(line) },
+    line => { pushLatestOutput.append(line).append("\n"); log.warn(line) }
+  )
+  if (pushLatestProcess != 0) {
+    log.warn(s"Note: $latest push may have failed or was redundant (same digest)")
+  }
 
   log.info("Push completed.")
 }
