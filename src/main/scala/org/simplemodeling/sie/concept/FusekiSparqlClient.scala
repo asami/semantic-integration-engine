@@ -13,7 +13,7 @@ import org.simplemodeling.sie.fuseki.FusekiClient
  * This adapter normalizes the return type and satisfies the SparqlClient interface.
  * 
  * @since   Dec.  6, 2025
- * @version Dec.  6, 2025
+ * @version Dec.  7, 2025
  * @author  ASAMI, Tomoharu
  */
 final class FusekiSparqlClient(
@@ -23,5 +23,9 @@ final class FusekiSparqlClient(
   /**
    * Execute a SPARQL SELECT query using the underlying FusekiClient.
    */
-    override def select(query: String): IO[Vector[Map[String, String]]] =
-    fuseki.queryFlat(query).map(_.toVector)
+  override def select(query: String): IO[Vector[Map[String, String]]] =
+    for
+      _ <- IO.println(s"[DEBUG] FusekiSparqlClient.select() endpoint = ${fuseki.endpoint}")
+      _ <- IO.println(s"[DEBUG] FusekiSparqlClient.select() query:\n$query")
+      result <- fuseki.queryFlat(query)
+    yield result.toVector

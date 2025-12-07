@@ -8,7 +8,7 @@ import java.util.Locale
 
 /*
  * @since   Dec.  6, 2025
- * @version Dec.  6, 2025
+ * @version Dec.  7, 2025
  * @author  ASAMI, Tomoharu
  */
 // ----------------------------------------------

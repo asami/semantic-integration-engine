@@ -3,14 +3,15 @@ package org.simplemodeling.sie.fuseki
 import io.circe.Json
 import cats.effect.IO
 import org.simplemodeling.sie.http.SimpleHttpClient
+import java.net.URLEncoder
 
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec.  5, 2025
+ * @version Dec.  7, 2025
  * @author  ASAMI, Tomoharu
  */
-class FusekiClient(endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://localhost:3030/ds")):
+class FusekiClient(val endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://localhost:3030/ds")):
   private val url = s"$endpoint/query"
 
   def searchConceptsJson(text: String): IO[Json] =
@@ -26,11 +27,13 @@ class FusekiClient(endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://lo
       """
 
     for
+      encoded <- IO.pure("query=" + URLEncoder.encode(sparql, "UTF-8"))
+
       resp <- SimpleHttpClient.post(
         url,
-        sparql,
+        encoded,
         Map(
-          "Content-Type" -> "application/sparql-query",
+          "Content-Type" -> "application/x-www-form-urlencoded",
           "Accept"       -> "application/sparql-results+json"
         )
       )
@@ -61,11 +64,13 @@ class FusekiClient(endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://lo
    */
   def queryFlat(sparql: String): IO[List[Map[String, String]]] =
     for
+      encoded <- IO.pure("query=" + URLEncoder.encode(sparql, "UTF-8"))
+
       resp <- SimpleHttpClient.post(
         url,
-        sparql,
+        encoded,
         Map(
-          "Content-Type" -> "application/sparql-query",
+          "Content-Type" -> "application/x-www-form-urlencoded",
           "Accept"       -> "application/sparql-results+json"
         )
       )
@@ -85,7 +90,13 @@ class FusekiClient(endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://lo
           val keys = c.keys.getOrElse(Nil)
           val row: Map[String, String] =
             keys.flatMap { key =>
-              c.downField(key).downField("value").as[String].toOption.map(v => key -> v)
+              val valueCursor = c.downField(key).downField("value")
+              valueCursor.focus match
+                case Some(jsonValue) =>
+                  jsonValue.asString match
+                    case Some(s) => Some(key -> s)        // includes empty string ""
+                    case None    => None
+                case None => None
             }.toMap
           if row.isEmpty then None else Some(row)
         }

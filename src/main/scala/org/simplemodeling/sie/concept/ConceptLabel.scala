@@ -11,7 +11,7 @@ import java.util.Locale
  * - preferred : true if this label is the "primary" one for its locale (e.g. skos:prefLabel)
  * 
  * @since   Dec.  6, 2025
- * @version Dec.  6, 2025
+ * @version Dec.  7, 2025
  * @author  ASAMI, Tomoharu
  */
 final case class ConceptLabel(

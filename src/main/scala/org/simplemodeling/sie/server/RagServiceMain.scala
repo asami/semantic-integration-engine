@@ -10,6 +10,8 @@ import org.simplemodeling.sie.indexer.HtmlIndexer
 import org.simplemodeling.sie.embedding.*
 import org.simplemodeling.sie.init.IndexInitializer
 import org.simplemodeling.sie.concept.*
+import org.simplemodeling.sie.util.RetryUtil
+import scala.concurrent.duration.*
 
 /**
  * RagServerMain
@@ -35,11 +37,22 @@ object RagServerMain extends IOApp.Simple:
 
   override def run: IO[Unit] =
     val cfg    = AppConfig.load()
-    val isDev = cfg.server.mode == ServerMode.Dev
+    val mode = cfg.server.mode
+    val isDev    = mode == ServerMode.Dev
+    val isDemo   = mode == ServerMode.Demo
+    val isStaging= mode == ServerMode.Staging
+    val isProd   = mode == ServerMode.Prod
+
     if isDev then
       println("[RagServerMain] DEV MODE: Skipping Chroma/Fuseki initialization and HtmlIndexer.")
+    else if isDemo then
+      println("[RagServerMain] DEMO MODE: Using preloaded Fuseki; skipping heavy indexing.")
+    else if isStaging then
+      println("[RagServerMain] STAGING MODE: Full initialization with debug logging.")
+    else
+      println("[RagServerMain] PROD MODE: Full initialization.")
 
-    val fuseki = FusekiClient(cfg.fuseki.endpoint)
+    val fusekiClient = FusekiClient(cfg.fuseki.endpoint)
 
     for
       // -------------------------------------------------------
@@ -54,7 +67,7 @@ object RagServerMain extends IOApp.Simple:
 
       _ <-
         if isDev then
-          // Skip all indexing and background tasks
+          // Skip indexing entirely only in Dev mode
           IO.unit
         else
           for
@@ -96,24 +109,24 @@ object RagServerMain extends IOApp.Simple:
             _ <-
               if forceIndex then
                 IO.println("[RagServerMain] Forced indexing (non-fatal)...") *>
-                  runIndexInitializer(fuseki, chroma, embedding)
-                  *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
-                  *> startHtmlIndexer(chroma)
+                runIndexInitializer(fusekiClient, chroma, embedding) *>
+                IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...") *>
+                startHtmlIndexer(chroma)
               else
                 exists match
                   case Right(false) =>
                     IO.println(
                       "[RagServerMain] Initial indexing because collection did not exist (non-fatal)..."
-                    ) *> runIndexInitializer(fuseki, chroma, embedding)
-                      *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
-                      *> startHtmlIndexer(chroma)
+                    ) *> runIndexInitializer(fusekiClient, chroma, embedding) *>
+                      IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...") *>
+                      startHtmlIndexer(chroma)
 
                   case Right(true) =>
                     IO.println(
                       "[RagServerMain] Skipping IndexInitializer (collection already exists)."
-                    )
-                      *> IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...")
-                      *> startHtmlIndexer(chroma)
+                    ) *>
+                      IO.println("[RagServerMain] Scheduling HtmlIndexer in background (non-fatal)...") *>
+                      startHtmlIndexer(chroma)
 
                   case Left(_) =>
                     IO.println(
@@ -123,23 +136,46 @@ object RagServerMain extends IOApp.Simple:
             // -------------------------------------------------------
             // 4. Start background recovery loop
             // -------------------------------------------------------
-            _ <- BackgroundTasks.startRecoveryLoop(chroma, fuseki, embedding)
+            _ <- BackgroundTasks.startRecoveryLoop(chroma, fusekiClient, embedding)
           yield ()
 
       // -------------------------------------------------------
       // 5. Start HTTP RAG server
       // -------------------------------------------------------
-      // Create ConceptMatcher and RagService inside an IO so we can continue
-      // sequencing in the for-comprehension.
-      service <- IO {
-        import org.simplemodeling.sie.concept.*
+      conceptDict <-
+        if isDev then
+          IO.pure(ConceptDictionary(Map.empty))
+        else
+          val loader = FusekiConceptLoader(new org.simplemodeling.sie.concept.FusekiSparqlClient(fusekiClient))
+          RetryUtil.retryIO(
+            attempts = 15,
+            delay = 1.second,
+            label = "ConceptLoader initial load"
+          ) {
+            loader.load()
+          }.map { seq =>
+            ConceptDictionary(
+              seq.map { case (uri, conceptLabel) =>
+                uri -> ConceptEntry(
+                  uri = uri,
+                  labels = Set(conceptLabel),
+                  localeLabels = Map(conceptLabel.locale -> Set(conceptLabel)),
+                  preferredLabelMap =
+                    if conceptLabel.preferred then
+                      Map(conceptLabel.locale -> conceptLabel.text)
+                    else
+                      Map.empty
+                )
+              }.toMap
+            )
+          }.handleError { e =>
+            println("[RagServerMain] ConceptLoader failed after retries (continuing with empty dictionary): " + e.getMessage)
+            ConceptDictionary(Map.empty)
+          }
 
-        val context = RagService.Context.default
-
-        // Placeholder empty ConceptDictionary until real Fuseki loader is wired
-        val conceptDict = ConceptDictionary(Map.empty)
-
-        val dictionary: Map[String, String] = Map.empty // unified label → URI (may remain empty for now)
+      service = {
+        val dictionary: Map[String, String] =
+          conceptDict.entries.map { case (label, entry) => label -> entry.uri }
 
         val embedSingle: String => cats.effect.IO[Array[Float]] = (s: String) =>
           embedding.embed(List(s)).map(_.flatMap(_.headOption).getOrElse(Array.emptyFloatArray))
@@ -155,7 +191,7 @@ object RagServerMain extends IOApp.Simple:
             embedSearch = embedSearch
           )
 
-        RagService(context, fuseki, chroma, embedding, conceptMatcher)
+        RagService(RagService.Context.default, fusekiClient, chroma, embedding, conceptMatcher)
       }
 
       _ <- HttpRagServer(service, cfg.server.host, cfg.server.siePort).start

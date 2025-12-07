@@ -5,6 +5,10 @@ WORKDIR /app
 # copy fat jar
 COPY dist/semantic-integration-engine.jar /app/semantic-integration-engine.jar
 
+# copy external config files
+RUN mkdir -p /app/conf
+COPY src/main/resources/*.conf /app/conf/
+
 # environment variables (override by compose)
 ENV FUSEKI_URL=http://fuseki:3030/ds
 ENV CHROMA_URL=http://chromadb:8000

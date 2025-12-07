@@ -15,6 +15,12 @@ services:
     networks:
       - sie-net
 
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3030/ds/query?query=SELECT%20*%20WHERE%20%7B%20?s%20?p%20?o%20%7D%20LIMIT%201"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
 
   #######################################################################
   # SIE-EMBEDDING — Lightweight embedding service
@@ -28,23 +34,28 @@ services:
     networks:
       - sie-net
 
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 3s
+      timeout: 2s
+      retries: 20
 
   #######################################################################
   # SIE — Semantic Integration Engine (HTTP + MCP WebSocket)
   #######################################################################
   sie:
-    image: ghcr.io/asami/sie:0.0.3.8
+    image: ghcr.io/asami/sie:0.0.4
     command:
       - "java"
-      - "-Dconfig.resource=application.demo.conf"
+      - "-Dconfig.file=/app/conf/application.demo.conf"
       - "-jar"
       - "/app/semantic-integration-engine.jar"
     container_name: sie
     depends_on:
       fuseki:
-        condition: service_started
+        condition: service_healthy
       sie-embedding:
-        condition: service_started
+        condition: service_healthy
 
     ports:
       - "9050:9050"   # HTTP RAG API
@@ -52,7 +63,7 @@ services:
 
     environment:
       # ---- SIE configuration ----
-      FUSEKI_URL: http://fuseki:3030/ds
+      FUSEKI_URL: http://sie-fuseki:3030/ds
       SIE_EMBEDDING_MODE: "oss"
       SIE_OSS_EMBEDDING_URL: http://sie-embedding:8081/embed
 

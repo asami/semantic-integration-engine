@@ -11,12 +11,14 @@ import pureconfig.generic.derivation.default.*
  * @author  ASAMI, Tomoharu
  */
 enum ServerMode:
-  case Dev, Prod
+  case Dev, Demo, Staging, Prod
 
 given ConfigReader[ServerMode] =
   ConfigReader[String].map {
-    case s if s.equalsIgnoreCase("dev")  => ServerMode.Dev
-    case s if s.equalsIgnoreCase("prod") => ServerMode.Prod
+    case s if s.equalsIgnoreCase("dev")     => ServerMode.Dev
+    case s if s.equalsIgnoreCase("demo")    => ServerMode.Demo
+    case s if s.equalsIgnoreCase("staging") => ServerMode.Staging
+    case s if s.equalsIgnoreCase("prod")    => ServerMode.Prod
     case other => throw new Exception(s"Invalid server mode: $other")
   }
 

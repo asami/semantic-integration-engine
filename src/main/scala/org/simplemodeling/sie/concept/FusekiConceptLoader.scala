@@ -10,7 +10,7 @@ import java.util.Locale
  * Input source is the ontology/glossary graph of SimpleModeling.org.
  * 
  * @since   Dec.  6, 2025
- * @version Dec.  6, 2025
+ * @version Dec.  7, 2025
  * @author  ASAMI, Tomoharu
  */
 final class FusekiConceptLoader(
@@ -21,21 +21,20 @@ final class FusekiConceptLoader(
     val query =
       """
       PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+      PREFIX dm:   <https://www.simplemodeling.org/documentmodel/ontology/0.1-SNAPSHOT#>
       PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
-      PREFIX gl:   <https://www.simplemodeling.org/glossary/ontology/0.1-SNAPSHOT#>
 
       SELECT ?concept ?label (LANG(?label) AS ?lang) ?kind WHERE {
-        ?term a gl:GlossaryTerm ;
-              gl:denotes ?concept .
+        ?concept a dm:Concept .
 
         {
-          ?term rdfs:label ?label .
+          ?concept rdfs:label ?label .
           BIND("rdfs" AS ?kind)
         } UNION {
-          ?term skos:prefLabel ?label .
+          ?concept skos:prefLabel ?label .
           BIND("pref" AS ?kind)
         } UNION {
-          ?term skos:altLabel ?label .
+          ?concept skos:altLabel ?label .
           BIND("alt" AS ?kind)
         }
       }

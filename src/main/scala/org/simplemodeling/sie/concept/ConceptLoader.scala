@@ -10,7 +10,7 @@ import cats.effect.IO
  *   That is the responsibility of ConceptService.
  * 
  * @since   Dec.  6, 2025
- * @version Dec.  6, 2025
+ * @version Dec.  7, 2025
  * @author  ASAMI, Tomoharu
  */
 trait ConceptLoader:

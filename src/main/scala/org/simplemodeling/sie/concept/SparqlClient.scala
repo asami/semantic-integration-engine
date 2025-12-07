@@ -9,7 +9,7 @@ import cats.effect.IO
  * The expectation is that each row is a Map from variable name to string value.
  * 
  * @since   Dec.  6, 2025
- * @version Dec.  6, 2025
+ * @version Dec.  7, 2025
  * @author  ASAMI, Tomoharu
  */
 trait SparqlClient:
