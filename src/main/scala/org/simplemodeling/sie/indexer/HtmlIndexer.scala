@@ -34,11 +34,17 @@ object HtmlIndexer {
       text: String
   )
 
+  /**
+   * IMPORTANT:
+   * HtmlIndexer MUST NOT decide whether indexing should run.
+   *
+   * All lifecycle decisions (stable / auto / force) are made by the caller
+   * (e.g. RagServerMain). Once invoked, HtmlIndexer always performs indexing.
+   */
   /** Main entry point */
   def indexAll(
       chroma: ChromaClient,
-      siteJsonldUrl: String = "https://www.simplemodeling.org/site.jsonld",
-      force: Boolean = false
+      siteJsonldUrl: String = "https://www.simplemodeling.org/site.jsonld"
   ): IO[Unit] = {
 
     val crawler = SiteJsonCrawler

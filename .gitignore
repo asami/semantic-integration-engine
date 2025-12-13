@@ -8,4 +8,5 @@ target
 .*
 boot
 fuseki/databases
+chroma-data
 dist

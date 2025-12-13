@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.4",
+    version := "0.0.5-SNAPSHOT",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -26,6 +26,7 @@ lazy val root = (project in file("."))
       "com.softwaremill.sttp.client3" %% "core"  % "3.9.7",
       "com.softwaremill.sttp.client3" %% "circe" % "3.9.7",
       "com.softwaremill.sttp.client3" %% "async-http-client-backend-fs2" % "3.9.7",
+      "com.softwaremill.sttp.client3" %% "async-http-client-backend-cats" % "3.9.7",
 
       // config
       "com.github.pureconfig" %% "pureconfig-core" % "0.17.5",

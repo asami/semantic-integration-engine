@@ -1,4 +1,5 @@
 #!/bin/sh
+set -e
 echo "[init-fuseki] Waiting for Fuseki endpoint..."
 
 # Wait for Fuseki HTTP server
@@ -12,6 +13,18 @@ until curl -s http://fuseki:3030/ds >/dev/null 2>&1; do
   echo "[init-fuseki] Dataset /ds not yet ready..."
   sleep 2
 done
+
+echo "[init-fuseki] Checking existing data in Fuseki..."
+COUNT=$(curl -s http://fuseki:3030/ds/query \
+  --data-urlencode 'query=SELECT (COUNT(*) AS ?c) WHERE { ?s ?p ?o }' \
+  -H 'Accept: application/sparql-results+json' \
+  | grep -o '"value"[[:space:]]*:[[:space:]]*"[^"]*"' \
+  | sed 's/.*"value"[[:space:]]*:[[:space:]]*"//;s/"//')
+
+if [ -n "$COUNT" ] && [ "$COUNT" != "0" ]; then
+  echo "[init-fuseki] Fuseki already contains data ($COUNT triples). Skipping initialization."
+  exit 0
+fi
 
 
 ############################################

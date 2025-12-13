@@ -8,6 +8,21 @@ import cats.effect.unsafe.implicits.global
 import scala.concurrent.duration.*
 import cats.syntax.all.*
 
+/*
+ * ChromaClient
+ *
+ * Clean version — no RagService or model classes.
+ * Provides:
+ *   - collectionExists
+ *   - createCollection
+ *   - addDocuments / addDocumentsMap
+ *   - search (embedding)
+ *   - hybridSearch (query_texts + query_embeddings)
+ *
+ * @since   Nov. 20, 2025
+ * @version Dec. 14, 2025
+ * @author  ASAMI
+ */
 // -------------------------
 // Models for Chroma decoding
 // -------------------------
@@ -36,21 +51,6 @@ object ChromaResponse:
   given Decoder[ChromaResponse] =
     Decoder.forProduct1("results")(ChromaResponse.apply)
 
-/*
- * ChromaClient
- *
- * Clean version — no RagService or model classes.
- * Provides:
- *   - collectionExists
- *   - createCollection
- *   - addDocuments / addDocumentsMap
- *   - search (embedding)
- *   - hybridSearch (query_texts + query_embeddings)
- *
- * @since   Nov. 20, 2025
- * @version Dec.  4, 2025
- * @author  ASAMI
- */
 class ChromaClient(endpoint: String, embeddingEngine: EmbeddingEngine):
   private val baseUri =
     if endpoint.endsWith("/") then endpoint.dropRight(1) else endpoint
@@ -98,11 +98,15 @@ class ChromaClient(endpoint: String, embeddingEngine: EmbeddingEngine):
   // -------------------------
 
   def collectionExists(name: String): Either[String, Boolean] =
-    getJson(s"collections/$name/exists").unsafeRunSync() match
+    getJson(s"collections/$name/exists").unsafeRunSync() match {
       case Right(json) =>
-        json.hcursor.get[Boolean]("exists").getOrElse(false).asRight[String]
+        json.hcursor.get[Boolean]("exists") match {
+          case Right(v) => Right(v)
+          case Left(_)  => Right(false) // defensive default: treat as not existing
+        }
       case Left(err) =>
         Left(err)
+    }
 
   def createCollection(name: String): Either[String, Json] =
     postJson(s"collections/$name/create", Json.obj()).unsafeRunSync()
@@ -178,35 +182,26 @@ class ChromaClient(endpoint: String, embeddingEngine: EmbeddingEngine):
   // Search
   // -------------------------
 
-  /** Embedding-only search */
+  /** Text-only search */
   def search(collection: String, text: String, n: Int): Either[String, List[RawPassage]] =
-    if embeddingEngine.mode == EmbeddingMode.None then
-      Right(Nil)
-    else
-      val vecOpt = embeddingEngine.embed(List(text)).unsafeRunSync()
-      vecOpt match
-        case None => Right(Nil)
-        case Some(list) if list.isEmpty => Right(Nil)
-        case Some(list) =>
-          val emb = list.head
-          val payload =
-            Json.obj(
-              "query_embeddings" ->
-                Json.arr(Json.fromValues(emb.toList.map(Json.fromFloatOrString))),
-              "n_results" -> Json.fromInt(n),
-              "include" -> Json.arr(
-                Json.fromString("documents"),
-                Json.fromString("distances"),
-                Json.fromString("metadatas")
-              )
-            )
+    val payload =
+      Json.obj(
+        "query_texts" -> Json.arr(Json.fromString(text)),
+        "n_results"   -> Json.fromInt(n),
+        "include" -> Json.arr(
+          Json.fromString("documents"),
+          Json.fromString("distances"),
+          Json.fromString("metadatas")
+        )
+      )
 
-          postJson(s"collections/$collection/query", payload).unsafeRunSync() match
-            case Left(err) => Left(err)
-            case Right(json) =>
-              json.as[ChromaResponse] match
-                case Left(decErr) => Left(decErr.getMessage)
-                case Right(resp)  => Right(toRawPassages(resp))
+    postJson(s"collections/$collection/query", payload).unsafeRunSync() match
+      case Left(err) =>
+        Left(err)
+      case Right(json) =>
+        json.as[ChromaResponse] match
+          case Left(decErr) => Left(decErr.getMessage)
+          case Right(resp)  => Right(toRawPassages(resp))
 
   /** Hybrid search (query_texts + query_embeddings) */
   def hybridSearch(collection: String, text: String, n: Int): Either[String, List[RawPassage]] =
@@ -245,8 +240,35 @@ class ChromaClient(endpoint: String, embeddingEngine: EmbeddingEngine):
           case Left(decErr) => Left(decErr.getMessage)
           case Right(resp)  => Right(toRawPassages(resp))
 
+  def countDocuments(name: String): IO[Int] =
+    val uriPath = s"collections/$name/count"
+    retryIO(
+      getJson(uriPath).map {
+        case Right(json) =>
+          // Expected response: { "count": <number> }
+          json.hcursor.get[Int]("count") match
+            case Right(c) => c
+            case Left(_)  => 0 // defensive default: treat as empty
+        case Left(err) =>
+          // Propagate as failure so caller can decide how to handle (Auto mode is best-effort)
+          throw new RuntimeException(s"countDocuments failed: $err")
+      },
+      s"GET $uriPath"
+    )
+
 object ChromaClient:
   def fromEnv(embedding: EmbeddingEngine): ChromaClient =
+    // VectorDB endpoint (Chroma or other backend)
     val endpoint =
-      sys.env.getOrElse("SIE_EMBEDDING_ENDPOINT", "http://sie-embedding:8081")
+      sys.props.get("SIE_VECTORDB_ENDPOINT")
+        .orElse(sys.env.get("SIE_VECTORDB_ENDPOINT"))
+        .getOrElse("http://sie-embedding:8081")
     new ChromaClient(endpoint, embedding)
+
+  /**
+   * Create ChromaClient from an explicit endpoint.
+   * Used by higher-level VectorDB factories (e.g. DEV / non-Docker execution).
+   */
+  def fromEndpoint(endpoint: String, embedding: EmbeddingEngine): ChromaClient = {
+    new ChromaClient(endpoint, embedding)
+  }

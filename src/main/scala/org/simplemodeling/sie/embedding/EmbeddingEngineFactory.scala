@@ -4,7 +4,7 @@ import cats.effect.*
 import cats.syntax.all.*
 import org.http4s.ember.client.EmberClientBuilder
 import sttp.client3.*
-import sttp.client3.asynchttpclient.fs2.AsyncHttpClientFs2Backend
+import sttp.client3.asynchttpclient.cats.AsyncHttpClientCatsBackend
 
 /**
  * Selects an EmbeddingEngine implementation based on configuration.
@@ -17,7 +17,7 @@ import sttp.client3.asynchttpclient.fs2.AsyncHttpClientFs2Backend
  *        - else none
  *
  * @since   Dec.  2, 2025
- * @version Dec.  3, 2025
+ * @version Dec. 12, 2025
  * @author  ASAMI, Tomoharu
  */
 object EmbeddingEngineFactory:
@@ -66,7 +66,7 @@ object EmbeddingEngineFactory:
         )
 
       case Some(_) =>
-        AsyncHttpClientFs2Backend.resource[IO]().use { backend =>
+        AsyncHttpClientCatsBackend.resource[IO]().use { backend =>
           given SttpBackend[IO, Any] = backend
           OpenAIEmbeddingEngine.fromEnv()
         }

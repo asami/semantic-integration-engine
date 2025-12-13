@@ -15,10 +15,10 @@ import org.http4s.Method.POST
  * OSS Embedding engine (HTTP client to FastAPI embedding server)
  *
  * Environment variable:
- *   SIE_OSS_EMBEDDING_URL  (e.g., http://oss-embed:7000/embedding)
+ *   SIE_EMBEDDING_ENDPOINT  (e.g., http://oss-embed:7000/embedding)
  *
  * @since   Dec.  2, 2025
- * @version Dec.  3, 2025
+ * @version Dec. 12, 2025
  * @author  ASAMI, Tomoharu
  */
 final class OSSEmbeddingEngine(
@@ -57,16 +57,16 @@ object OSSEmbeddingEngine {
    * Factory: create HTTP client engine from environment variable.
    */
   def fromEnv(httpClient: Client[IO]): IO[EmbeddingEngine] =
-    sys.env.get("SIE_OSS_EMBEDDING_URL") match
+    sys.env.get("SIE_EMBEDDING_ENDPOINT") match
       case Some(url) =>
         Uri.fromString(url) match
           case Left(_)  =>
-            IO.raiseError(new RuntimeException(s"Invalid SIE_OSS_EMBEDDING_URL: $url"))
+            IO.raiseError(new RuntimeException(s"Invalid SIE_EMBEDDING_ENDPOINT: $url"))
           case Right(u) =>
             IO.pure(new OSSEmbeddingEngine(httpClient, u))
 
       case None =>
         IO.raiseError(new RuntimeException(
-          "OSSEmbeddingEngine requires SIE_OSS_EMBEDDING_URL to be set (FastAPI embedding server endpoint)"
+          "OSSEmbeddingEngine requires SIE_EMBEDDING_ENDPOINT to be set (embedding server endpoint)"
         ))
 }

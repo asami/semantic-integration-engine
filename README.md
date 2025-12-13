@@ -72,6 +72,71 @@ Environment variables:
 
 ---
 
+## 🧪 Development Startup Flow (Recommended)
+
+In DEV mode, SIE is designed to run **outside Docker** on the local JVM,
+while external knowledge stores are provided by Docker.
+
+This enables fast iteration, debugging, and safe reset of local data.
+
+### Architecture (DEV)
+
+    Local JVM (sbt dev)
+        └─ Semantic Integration Engine (SIE)
+             ├─ GraphDB  → Fuseki (Docker)
+             └─ VectorDB → sie-embedding / Chroma (Docker)
+
+### Step-by-step
+
+1. Start external dependencies (GraphDB / VectorDB):
+
+       docker compose -f docker-compose.dev.yml up -d
+
+   This starts:
+   - Apache Jena Fuseki (RDF / Knowledge Graph)
+   - sie-embedding (Embedding + VectorDB backed by Chroma)
+
+2. Start SIE locally:
+
+       sbt dev
+
+   SIE connects to Docker-managed services via localhost.
+
+3. Verify status:
+
+       curl http://localhost:9050/status | jq
+
+   You should see:
+   - mode = DEV
+   - graphDb / vectorDb roles and readiness
+   - overall.state = healthy | degraded | unavailable
+
+   Note:
+   - `healthy`   : all required subsystems are ready
+   - `degraded`  : system is operational with limited capabilities (e.g. vector index initializing)
+   - `unavailable`: semantic queries cannot be served
+
+### Endpoint resolution (DEV)
+
+In DEV mode, endpoints are resolved as follows:
+
+- Default endpoints (no configuration required):
+    - Fuseki    → http://localhost:9030/ds
+    - VectorDB  → http://localhost:8081
+    - Embedding → http://localhost:8081/embed
+
+- Overrides (advanced use only):
+    - Environment variables:
+        - FUSEKI_URL
+        - SIE_VECTORDB_ENDPOINT
+        - SIE_EMBEDDING_ENDPOINT
+    - Explicit definitions in `application.dev.conf`
+
+See comments in `application.dev.conf` and `AppConfig.scala`
+for the full DEV resolution policy.
+
+---
+
 ## 🐳 Build Docker Image (using existing Dockerfile)
 
     docker build -t ghcr.io/asami/sie:latest .

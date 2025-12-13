@@ -1,5 +1,57 @@
+# ============================================================
+# docker-compose.dev.yml
+#
+# DEV Environment – External Dependencies Only
+# ============================================================
+#
+# Operational model:
+#
+#   - SIE (Semantic Integration Engine) runs OUTSIDE Docker
+#     on the local JVM via:
+#
+#         $ sbt dev
+#
+#   - This compose file provides ONLY external dependencies
+#     required by SIE in DEV mode.
+#
+# Components:
+#
+#   - GraphDB : Apache Jena Fuseki (RDF / Knowledge Graph)
+#   - VectorDB / Embedding : sie-embedding (Chroma PersistentClient)
+#
+# Connection model:
+#
+#   SIE (local JVM)
+#     ├─ Fuseki       → http://localhost:9030/ds
+#     └─ sie-embedding→ http://localhost:8081
+#
+# Initialization policy (DEV):
+#
+#   - GraphDB (Fuseki):
+#       * Initialized by `init-fuseki` container.
+#       * If data already exists under ./fuseki/databases,
+#         it is reused as-is.
+#       * SIE treats GraphDB as a REQUIRED dependency
+#         and fails fast if it is unreachable or empty.
+#
+#   - VectorDB (sie-embedding / Chroma):
+#       * Persistent data stored under ./chroma-data.
+#       * If data exists, it is reused.
+#       * If empty, SIE performs lazy / background initialization.
+#       * Absence of VectorDB data is NOT a startup error in DEV.
+#
+# Design notes:
+#
+#   - SIE itself MUST NOT be started by docker-compose.dev.yml.
+#   - This separation enables fast iteration, debugging,
+#     and safe reset of local knowledge stores.
+#
+# ============================================================
 services:
 
+  # ------------------------------------------------------------
+  # GraphDB: Apache Jena Fuseki
+  # ------------------------------------------------------------
   fuseki:
     image: stain/jena-fuseki:4.8.0
     container_name: fuseki
@@ -37,9 +89,13 @@ services:
   #   networks:
   #     - sie-network
 
+  # ------------------------------------------------------------
+  # GraphDB Initialization (DEV)
+  # ------------------------------------------------------------
   init-fuseki:
     image: curlimages/curl:8.10.1
     container_name: init-fuseki
+    restart: "no"
     depends_on:
       - fuseki
     volumes:
@@ -48,43 +104,26 @@ services:
     networks:
       - sie-network
 
+  # ------------------------------------------------------------
+  # VectorDB / Embedding Service
+  # ------------------------------------------------------------
   sie-embedding:
     build: ./src/main/python/embedding
     container_name: sie-embedding
     ports:
       - "8081:8081"
+    volumes:
+      # Persist Chroma data to host ./chroma-data (must match chroma_server.py persist path)
+      - ./chroma-data:/chroma-data
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
       interval: 5s
       timeout: 2s
       retries: 20
       start_period: 5s
-    networks:
-      - sie-network
-
-  sie:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: sie
     depends_on:
-      fuseki:
-        condition: service_started
       init-fuseki:
         condition: service_completed_successfully
-      # init-chroma:
-      #   condition: service_completed_successfully
-      sie-embedding:
-        condition: service_healthy
-    ports:
-      - "9050:9050"
-    environment:
-      FUSEKI_URL: http://fuseki:3030/ds
-      CHROMA_URL: http://sie-embedding:8081
-      SIESERVER_PORT: 9050
-      # OPENAI_API_KEY: "${OPENAI_API_KEY}"
-      SIE_EMBEDDING_MODE: "oss"
-      SIE_OSS_EMBEDDING_URL: "http://sie-embedding:8081/embed"
     networks:
       - sie-network
 

@@ -8,7 +8,7 @@ import java.net.URLEncoder
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec.  7, 2025
+ * @version Dec. 13, 2025
  * @author  ASAMI, Tomoharu
  */
 class FusekiClient(val endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http://localhost:3030/ds")):
@@ -100,6 +100,47 @@ class FusekiClient(val endpoint: String = sys.env.getOrElse("FUSEKI_URL", "http:
             }.toMap
           if row.isEmpty then None else Some(row)
         }
+
+  /**
+   * Best-effort health check ensuring Fuseki is reachable and dataset is non-empty.
+   *
+   * Semantics:
+   *   - Reachability: SPARQL endpoint must respond successfully.
+   *   - Non-empty: total triple count must be >= minTriples.
+   *
+   * Design notes:
+   *   - Uses a COUNT(*) query to avoid loading actual data.
+   *   - Intended for startup fail-fast when GraphDB is Unmanaged.
+   */
+  def assertReachableAndNonEmpty(minTriples: Int = 1): IO[Unit] =
+    val sparql =
+      """
+      SELECT (COUNT(*) AS ?c)
+      WHERE { ?s ?p ?o }
+      """
+
+    queryFlat(sparql).flatMap { rows =>
+      val countOpt =
+        rows.headOption
+          .flatMap(_.get("c"))
+          .flatMap(s => scala.util.Try(s.toLong).toOption)
+
+      countOpt match
+        case Some(c) if c >= minTriples =>
+          IO.unit
+        case Some(c) =>
+          IO.raiseError(
+            new IllegalStateException(
+              s"Fuseki dataset appears empty or insufficient (triples=$c, expected >= $minTriples)."
+            )
+          )
+        case None =>
+          IO.raiseError(
+            new IllegalStateException(
+              "Failed to read triple count from Fuseki response."
+            )
+          )
+    }
 
 case class FusekiConcept(
   uri: String,

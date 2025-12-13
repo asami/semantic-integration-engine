@@ -5,38 +5,62 @@ import io.circe.parser.*
 import io.circe.syntax.*
 import cats.effect.*
 import cats.effect.unsafe.implicits.global
-import org.http4s.*
-import org.http4s.circe.*
 import org.http4s.client.Client
 
-import scala.io.StdIn
-
 /*
- * NOTE:
- * This McpClient is kept for integration testing and for compatibility with
- * non‑ChatGPT AI applications. It acts as a process‑based MCP client using
- * STDIN/STDOUT and delegates to the SIE REST endpoint.
+ * Architectural Role:
+ *   - This component is a *client* of the McpWebSocketServer within the SIE architecture.
  *
- * ChatGPT does NOT use this client. ChatGPT communicates with SIE via the
- * WebSocket‑based MCP server implementation.
+ * MCP Protocol Role:
+ *   - From the perspective of external AI tools (e.g., VSCode, CLI agents),
+ *     this process acts as an MCP *server* over STDIN/STDOUT, because it is the
+ *     endpoint that receives MCP requests and returns responses according to the protocol.
  *
- * This class is useful for:
- *   - Local/CLI MCP testing,
- *   - Connecting other MCP‑compatible AI systems,
- *   - Development diagnostics.
+ * Implementation Role:
+ *   - Functionally, this class is a *Stdio Proxy / Gateway*, forwarding MCP
+ *     requests to the unified WebSocket-based MCP server (McpWebSocketServer),
+ *     ensuring that both WebSocket clients and STDIO-based clients share the same
+ *     behavior and tool definitions.
+ *
+ * Summary:
+ *   Internally (SIE): Client
+ *   Externally (MCP): Server
+ *   Implementation:   Stdio Proxy / Gateway
+ *
+ * This dual identity is intentional and reflects the architecture:
+ *   - The Stdio-facing side exposes an MCP server interface.
+ *   - The internal side delegates all logic to the central WebSocket MCP server.
  *
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec.  4, 2025
+ * @version Dec. 12, 2025 (clarified multi-role architecture: client/server/proxy)
  * @author  ASAMI, Tomoharu
  */
+trait InitializeHandler:
+  def onInitialize(req: McpRequest): Json
+
+class MergedResourceInitializeHandler extends InitializeHandler:
+  def loadJsonResource(name: String): Json =
+    val stream = getClass.getClassLoader.getResourceAsStream(name)
+    if stream == null then throw new RuntimeException(s"Resource not found: $name")
+    val text = scala.io.Source.fromInputStream(stream).mkString
+    parse(text).fold(throw _, identity)
+
+  def merge(a: Json, b: Json): Json =
+    a.deepMerge(b)
+
+  def onInitialize(req: McpRequest): Json =
+    val init = loadJsonResource("initialize.json")
+    val manifest = loadJsonResource("mcp.json")
+    merge(init, manifest)
+
 class McpClient(restUrl: String)(using client: Client[IO]):
 
-  private val sieQueryUri = Uri.unsafeFromString(s"$restUrl/sie/query")
+  private val initHandler: InitializeHandler = new MergedResourceInitializeHandler()
 
   def start(): Unit =
     while true do
-      val line = StdIn.readLine()
+      val line = scala.io.StdIn.readLine()
       if line != null && line.trim.nonEmpty then handle(line)
 
   private def handle(input: String): Unit =
@@ -56,34 +80,11 @@ class McpClient(restUrl: String)(using client: Client[IO]):
           case Right(req) =>
             val resp = req.method match
               case "initialize" =>
-                val caps = Json.obj(
-                  "capabilities" -> Json.obj(
-                    "tools" -> Json.arr(
-                      Json.obj(
-                        "name" -> Json.fromString("sie.query"),
-                        "description" -> Json.fromString("Query SIE via REST"),
-                        "input_schema" -> Json.obj(
-                          "type" -> Json.fromString("object"),
-                          "properties" -> Json.obj(
-                            "query" -> Json.obj("type" -> Json.fromString("string"))
-                          ),
-                          "required" -> Json.arr(Json.fromString("query"))
-                        )
-                      )
-                    )
-                  )
-                )
-                McpResponse(id = req.id, result = Some(caps))
+                val merged = initHandler.onInitialize(req)
+                McpResponse(id = req.id, result = Some(merged))
 
               case "tools/sie.query" =>
-                val q =
-                  req.params.flatMap(_.hcursor.get[String]("query").toOption).getOrElse("")
-                val body = Json.obj("query" -> Json.fromString(q))
-                val result =
-                  client
-                    .expect[Json](Request[IO](Method.POST, sieQueryUri).withEntity(body))
-                    .unsafeRunSync()
-                McpResponse(id = req.id, result = Some(result))
+                McpResponse(id = req.id, error = Some(McpError(501, "Forwarding not implemented")))
 
               case other =>
                 McpResponse(id = req.id, error = Some(McpError(404, s"Unknown: $other")))

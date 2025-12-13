@@ -1,0 +1,68 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://simplemodeling.org/schema/sie/status-v1.json",
+  "title": "SIE Status Schema v1",
+  "description": "Canonical semantic status contract for Semantic Integration Engine (SIE).",
+  "type": "object",
+  "required": ["schemaVersion", "meta", "status"],
+  "properties": {
+    "schemaVersion": {
+      "description": "Status schema version identifier.",
+      "const": "v1"
+    },
+    "meta": {
+      "description": "Non-semantic metadata for diagnostics and observability.",
+      "type": "object",
+      "required": ["mode", "version", "build"],
+      "properties": {
+        "mode": {
+          "description": "Server execution mode.",
+          "type": "string",
+          "enum": ["Dev", "Demo", "Staging", "Prod"]
+        },
+        "version": {
+          "description": "Semantic version of SIE.",
+          "type": "string"
+        },
+        "build": {
+          "description": "Git commit hash or build identifier.",
+          "type": "string"
+        },
+        "timestamp": {
+          "description": "Optional server timestamp.",
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": true
+    },
+    "status": {
+      "description": "Canonical semantic status derived from Status case class.",
+      "type": "object",
+      "required": ["overall"],
+      "properties": {
+        "overall": {
+          "type": "object",
+          "description": "Aggregated semantic status of the Semantic Integration Engine.",
+          "required": ["state"],
+          "properties": {
+            "state": {
+              "type": "string",
+              "enum": ["healthy", "degraded", "unavailable"],
+              "description": "Overall system state"
+            },
+            "reason": {
+              "type": "array",
+              "description": "Human-readable reasons explaining degraded or unavailable state",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": false
+}

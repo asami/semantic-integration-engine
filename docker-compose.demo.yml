@@ -65,7 +65,7 @@ services:
       # ---- SIE configuration ----
       FUSEKI_URL: http://sie-fuseki:3030/ds
       SIE_EMBEDDING_MODE: "oss"
-      SIE_OSS_EMBEDDING_URL: http://sie-embedding:8081/embed
+      SIE_EMBEDDING_ENDPOINT: http://sie-embedding:8081/embed
 
       # ---- MCP WebSocket port ----
       SIE_MCP_PORT: 9051

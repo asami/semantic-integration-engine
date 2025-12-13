@@ -8,6 +8,7 @@ import io.circe.*
 import cats.effect.IO
 import cats.effect.unsafe.implicits.global
 import org.simplemodeling.sie.concept.ConceptMatcher
+import org.simplemodeling.sie.config.AgentMode
 
 /*
  * Integrated RagService
@@ -17,7 +18,7 @@ import org.simplemodeling.sie.concept.ConceptMatcher
  * 
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec.  6, 2025
+ * @version Dec. 14, 2025
  * @author  ASAMI, Tomoharu
  */
 final case class ConceptHit(
@@ -73,8 +74,27 @@ class RagService(
   fuseki: FusekiClient,
   chroma: ChromaClient,
   embedding: EmbeddingEngine,
-  conceptMatcher: ConceptMatcher
+  conceptMatcher: ConceptMatcher,
+  val agentMode: AgentMode
 ) {
+  /**
+   * Expose the underlying FusekiClient for observational purposes only
+   * (e.g. /status health checks).
+   *
+   * Design rules:
+   *   - MUST be read-only.
+   *   - MUST NOT be used for control flow or mutation.
+   *   - Startup enforcement is handled in RagServerMain.
+   */
+  def fusekiClient: FusekiClient = fuseki
+  /**
+   * Agent execution mode for this RagService instance.
+   *
+   * Design rules:
+   *   - Read-only exposure for observability (/status).
+   *   - MUST NOT control behavior at this stage (Step A).
+   *   - Behavioral branching is introduced in Step B.
+   */
   /** Main IO-based entry point */
   def runIO(query: String): IO[RagResult] = {
     val conceptMatchesIO: IO[List[org.simplemodeling.sie.concept.ConceptHit]] =
@@ -97,18 +117,12 @@ class RagService(
 
     val passagesIO: IO[List[PassageHit]] =
       IO {
-        if (embedding.mode.toString.equalsIgnoreCase("none")) {
-          chroma
-            .search("simplemodeling", query, 5)
-            .fold(_ => Nil, _.map(enrich))
-        } else {
-          val hybrid  = chroma.hybridSearch("simplemodeling", query, 5)
-          val fallback = chroma.search("simplemodeling", query, 5)
-
-          hybrid
-            .orElse(fallback)
-            .fold(_ => Nil, _.map(enrich))
-        }
+        // Always use VectorDB for passage retrieval.
+        // EmbeddingEngine mode only affects how embeddings are produced,
+        // not whether VectorDB search is executed.
+        chroma
+          .search("simplemodeling", query, 5)
+          .fold(_ => Nil, _.map(enrich))
       }.handleError(_ => Nil)
 
     for {
