@@ -64,6 +64,29 @@ All items here are deferred by design, not forgotten.
   - concept–concept similarity (e.g. つけ麺 → ラーメン)
   - document–concept bridging (future)
 
+### 2.5 Concept Network / Concept Space
+
+- [ ] Introduce **Session-local Concept Space**
+  - aggregate concepts appearing within a single MCP / ChatGPT session
+  - maintain weighted counts with **time-decay**
+    - recent mentions have higher influence
+    - older mentions gradually attenuate
+  - intended to represent the *current conversational semantic focus*
+- [ ] Define **time-decay model**
+  - exponential decay (e.g. half-life based)
+  - configurable window size (e.g. last N minutes / turns)
+  - no hard persistence (session-scoped only)
+- [ ] Add MCP tool: `tools.sie.describeContext`
+  - returns the current session-local concept space
+  - includes:
+    - top-ranked concepts
+    - optional lightweight concept networks per concept
+  - designed for *explanatory / reflective* use by ChatGPT
+- [ ] Clarify relationship to future context management
+  - feeds into future SessionContext / RagContext
+  - does NOT modify global knowledge stores
+  - purely observational + derived
+
 ---
 
 ## 3. Runtime Topology / Architecture Modeling
@@ -107,7 +130,101 @@ All items here are deferred by design, not forgotten.
   - `[VectorDB.Derived]`
 - [ ] Correlate logs with `/status` fields
 
+### 5.2 OpenTelemetry (Operational Observability)
+- [ ] Introduce OpenTelemetry as the **operational observability backbone**
+  - traces as primary signal (request / operation lifecycle)
+  - metrics as secondary signal (counts, latency, error rates)
+  - logs as correlated auxiliary data (trace_id / span_id)
+- [ ] Define minimal span model aligned with Component Framework
+  - span = component.operation
+  - stable attributes: component.name, component.version, operation.name
+- [ ] Ensure OpenTelemetry usage is **framework-internal**
+  - generated components MUST NOT depend on OTel APIs directly
+  - observability emerges via framework hooks
+- [ ] Provide DEV-friendly setup (local collector, console exporter)
+- [ ] Defer backend choice (Jaeger / Tempo / Prometheus) to deployment layer
+
+### 5.3 Analytical Session Logs (Model Refinement)
+- [ ] Introduce **analysis-oriented session logs** separate from operational logs
+- [ ] Record semantic events rather than raw transport only
+  - MCP semantic events (e.g. explainConcept requested/responded)
+  - concept / document / graph usage summaries
+- [ ] Capture lightweight reasoning traces
+  - selected vs rejected knowledge sources
+  - search strategy (graph / vector / hybrid)
+- [ ] Persist logs per session (directory-based)
+  - intended for post-hoc analysis and model refinement
+  - NOT part of runtime health or observability
+- [ ] Clearly document separation of concerns:
+  - OpenTelemetry = runtime / operational observability
+  - Session analysis logs = knowledge & model evolution feedback
+
+### 5.4 Background Knowledge Rebuild & Hot Swap
+- [ ] Support **background knowledge rebuild** without impacting active services
+  - GraphDB and VectorDB rebuilds MUST run out-of-band
+  - no in-place mutation of active knowledge stores
+- [ ] Introduce **generation-based knowledge management**
+  - each rebuild produces a new immutable generation (e.g. v1, v2, ...)
+  - active generation is selected via an explicit pointer
+- [ ] Implement **atomic hot swap**
+  - switch active generation in a single, fast operation
+  - ensure explainConcept / explainContext continue uninterrupted
+- [ ] Provide minimal validation before swap
+  - basic counts and integrity checks
+  - failed generations are discarded safely
+- [ ] Expose generation state for diagnostics
+  - active generation
+  - build-in-progress generation
+  - last successful swap timestamp
+- [ ] Integrate observability hooks
+  - background build duration and outcome
+  - swap events as distinct operational traces
+- [ ] Defer implementation until after:
+  - explainConcept stabilization
+  - explainContext introduction
+
 ---
+
+
+## 5.x RagService Operations
+
+### Core (ChatGPT-facing)
+- [x] query
+  - current run / runIO implementation
+  - legacy exploratory query (concept + document)
+  - candidate for refactoring into semanticQuery
+- [x] explainConcept
+  - authoritative explanation for a single concept (URI-based)
+  - primary source: prebuilt ConceptDictionary
+- [ ] semanticQuery
+  - exploratory / probabilistic operation
+  - natural-language input
+  - returns ranked concepts, documents, and lightweight structure
+  - primary entry point for ChatGPT understanding phase
+- [ ] explainContext
+  - contextual explanation over multiple concepts
+  - session-aware narrative explanation
+  - successor of repeated explainConcept calls
+
+### Structural / Utility
+- [x] getNeighbors
+  - retrieve local concept relations (parents / children / related)
+  - structural building block for explanations
+- [ ] resolveConcept
+  - resolve natural-language terms into candidate Concept URIs
+  - explicit elevation step before explainConcept
+
+### Advanced / Future
+- [ ] compareConcepts
+  - structured comparison between two or more concepts
+- [ ] traceRelation
+  - explain semantic relationship path between concepts
+- [ ] conceptDiscovery
+  - detect missing or emerging concepts from documents
+  - intended for model / BoK refinement
+- [ ] explainCoverage
+  - assess knowledge coverage for a domain or topic
+  - internal quality and completeness analysis
 
 ## 6. Documentation & Articles
 
