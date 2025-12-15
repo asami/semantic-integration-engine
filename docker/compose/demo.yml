@@ -44,13 +44,10 @@ services:
   # SIE — Semantic Integration Engine (HTTP + MCP WebSocket)
   #######################################################################
   sie:
-    image: ghcr.io/asami/sie:0.0.4
-    command:
-      - "java"
-      - "-Dconfig.file=/app/conf/application.demo.conf"
-      - "-jar"
-      - "/app/semantic-integration-engine.jar"
+    image: ghcr.io/asami/sie:latest
     container_name: sie
+    volumes:
+      - .:/workspace/vscode-mcp
     depends_on:
       fuseki:
         condition: service_healthy
@@ -62,6 +59,11 @@ services:
       - "9051:9051"   # MCP WebSocket API
 
     environment:
+      SIE_MODE: demo
+      # ---- Application server mode (required) ----
+      SERVER_MODE: demo
+      # ---- MCP / VS Code workspace ----
+      SIE_WORKSPACE_DIR: /workspace/vscode-mcp
       # ---- SIE configuration ----
       FUSEKI_URL: http://sie-fuseki:3030/ds
       SIE_EMBEDDING_MODE: "oss"

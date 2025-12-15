@@ -1,0 +1,89 @@
+README.demo.md
+
+MCP Demo Workspace (SIE)
+========================
+
+This directory has been initialized by mcp-setup
+to enable MCP-based access to the Semantic Integration Engine (SIE).
+
+This workspace is temporary and disposable by design.
+
+
+What was generated
+------------------
+
+The following files and directories were created by mcp-setup:
+
+- bin/sie-mcp
+    MCP launcher command executed by VS Code
+
+- .vscode/settings.json
+    Workspace-local MCP configuration
+
+- (optional) local data directories for Fuseki / Chroma
+
+No global settings were modified.
+
+
+Available access methods
+------------------------
+
+You can interact with SIE using three different interfaces.
+
+
+Option A: VS Code MCP (Recommended)
+----------------------------------
+
+1. Open this directory in VS Code
+2. Open AI Tools / Codex
+3. Select the MCP server named "sie-demo"
+4. Use MCP tools such as query or explainConcept
+
+This option is best for:
+- Interactive exploration
+- Development and experimentation
+- Tool-driven workflows
+
+
+Option B: ChatGPT MCP
+--------------------
+
+ChatGPT can connect directly to the MCP WebSocket endpoint:
+
+    ws://localhost:9051/mcp
+
+This option is useful for:
+- Demonstrations without IDE setup
+- Protocol-level inspection
+- Reproducing examples from articles
+
+
+Option C: REST API (Direct HTTP Access)
+--------------------------------------
+
+SIE also provides a traditional REST API:
+
+    http://localhost:9050/sie/query
+
+Example:
+
+    curl -X POST http://localhost:9050/sie/query \
+      -H "Content-Type: application/json" \
+      -d '{ "query": "Explain SimpleModelObject." }'
+
+The REST API and MCP API share the same semantic engine internally.
+
+
+Cleanup
+-------
+
+    docker compose -f docker-compose.demo.yml down -v
+    rm -rf <this-directory>
+
+
+Notes
+-----
+
+This file is provided for demo purposes only.
+For full documentation and development setup,
+see the main project README.md.

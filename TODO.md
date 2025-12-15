@@ -13,12 +13,68 @@ All items here are deferred by design, not forgotten.
   - HTTP endpoints minimized or disabled
   - MCP/WebSocket becomes primary interface
 - [ ] Ensure routing behavior matches `/status.agent.mode`
+- [ ] NOTE: MCP runtime availability in editors (e.g. VS Code) is a prerequisite.
+      Current implementation is validated via CLI-based MCP client only.
 
 ### 1.2 Agent Capability Exposure
 - [ ] `/status.agent.capabilities`
   - supported protocols (http, mcp, websocket)
   - read-only vs write-capable
 - [ ] Explicit agent readiness status (for ChatGPT / IDE agents)
+
+### 1.3 MCP Client (stdio) – CLI-first validation
+
+- [x] Implement stdio-based MCP client as a standalone CLI
+- [x] Support explicit session termination
+  - stdin EOF
+  - SIGINT / shutdown hook
+  - meta-commands (`:exit`, `:quit`)
+- [x] Provide CLI meta-commands for MCP self-inspection
+  - `:status`
+  - `:initialize`
+  - `:manifest`
+- [ ] Clarify boundary between CLI control commands and MCP JSON-RPC messages
+- [ ] Decide long-term positioning:
+  - CLI as permanent inspection/debug interface
+  - or CLI as fallback until editor MCP runtimes mature
+
+## 1.x CLI (Command Line Interface)
+
+### 1.x.1 CLI Positioning & Scope
+- [ ] Define CLI as a first-class control interface for SIE
+- [ ] Clarify relationship between:
+  - CLI
+  - MCP (stdio / websocket)
+  - HTTP (REST)
+- [ ] Decide supported interaction styles:
+  - interactive REPL
+  - one-shot commands
+  - script-friendly (non-interactive)
+
+### 1.x.2 Command Model & UX
+- [ ] Define command taxonomy
+  - control commands (status, exit, config)
+  - inspection commands (initialize, manifest, capabilities)
+  - knowledge commands (query, explainConcept, explainContext)
+- [ ] Unify meta-commands (`:xxx`) and CLI commands (`sie xxx`)
+- [ ] Decide command grammar (colon-based vs subcommand-based)
+
+### 1.x.3 Output & Format
+- [ ] Support output formats
+  - human-readable (pretty)
+  - JSON (machine-readable)
+- [ ] Add `--json` / `--pretty` flags
+- [ ] Stable schema for JSON outputs
+
+### 1.x.4 Lifecycle & Session Control
+- [ ] Explicit session start / end semantics
+- [ ] Support graceful shutdown across transports
+- [ ] Optional session context persistence (future)
+
+### 1.x.5 CLI as Agent Surface
+- [ ] Allow AI agents to drive SIE via CLI deterministically
+- [ ] Document CLI usage as canonical examples
+- [ ] Treat CLI transcripts as executable documentation
 
 ---
 
@@ -232,6 +288,7 @@ All items here are deferred by design, not forgotten.
 - [ ] Article: sbt dev + DEV runtime walkthrough
 - [ ] Article: Semantic Integration vs classic RAG
 - [ ] Article: Agent-mode and MCP design rationale
+- [ ] Article: MCP stdio client and CLI-first validation (12/22)
 
 ### 6.2 Diagrams
 - [ ] Runtime topology diagrams

@@ -1,0 +1,18 @@
+#!/bin/sh
+set -e
+
+# ------------------------------------------------------------
+# Host-side MCP entrypoint
+#
+# - Called from VS Code MCP
+# - The ONLY external command
+# - Proxies stdio to container
+# ------------------------------------------------------------
+
+PROJECT_DIR="${SIE_PROJECT_DIR:-.}"
+COMPOSE_FILE="${SIE_COMPOSE_FILE:-demo.compose.yml}"
+
+exec docker compose \
+    -f "${PROJECT_DIR}/${COMPOSE_FILE}" \
+    exec -i sie \
+    /opt/sie/bin/mcp-client

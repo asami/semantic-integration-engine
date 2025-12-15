@@ -1,0 +1,90 @@
+README.demo.ja.md
+
+MCP デモ用ワークスペース（SIE）
+================================
+
+このディレクトリは mcp-setup によって初期化され、
+Semantic Integration Engine（SIE）を MCP 経由で利用できるようになっています。
+
+このワークスペースはデモ専用・使い捨て前提です。
+
+
+生成されたもの
+--------------
+
+mcp-setup により、次のファイルや設定が作成されています。
+
+- bin/sie-mcp
+    VS Code が起動する MCP ランチャ
+
+- .vscode/settings.json
+    ワークスペース限定の MCP 設定
+
+- （必要に応じて）Fuseki / Chroma のローカルデータ
+
+グローバルな設定は一切変更されていません。
+
+
+利用可能な接続方法
+------------------
+
+SIE には 3 つの利用ルートがあります。
+
+
+Option A: VS Code MCP（推奨）
+----------------------------
+
+1. このディレクトリを VS Code で開く
+2. AI Tools / Codex を開く
+3. MCP サーバー「sie-demo」を選択
+4. query や explainConcept などのツールを実行
+
+以下の用途に適しています：
+- 対話的な探索
+- 開発・検証
+- ツール指向の作業
+
+
+Option B: ChatGPT MCP
+--------------------
+
+ChatGPT から MCP WebSocket に直接接続できます。
+
+    ws://localhost:9051/mcp
+
+以下の用途に向いています：
+- IDE を使わないデモ
+- プロトコルレベルの理解
+- 記事・資料の再現
+
+
+Option C: REST API（直接接続）
+-----------------------------
+
+SIE は MCP を使わない REST API も提供しています。
+
+    http://localhost:9050/sie/query
+
+例：
+
+    curl -X POST http://localhost:9050/sie/query \
+      -H "Content-Type: application/json" \
+      -d '{ "query": "Explain SimpleModelObject." }'
+
+REST API と MCP API は、
+同じ意味検索エンジンを内部で共有しています。
+
+
+後片付け
+--------
+
+    docker compose -f docker-compose.demo.yml down -v
+    rm -rf <このディレクトリ>
+
+
+補足
+----
+
+この README はデモ用途専用です。
+開発方法や全体構成については、
+プロジェクトルートの README.md を参照してください。

@@ -187,6 +187,141 @@ Available endpoints:
 
 ---
 
+## Recreating Containers to Ensure Updated Images
+
+When you rebuild Docker images locally (for demo or production verification),
+Docker Compose may continue using existing containers based on older images.
+
+To ensure that the latest locally built image is actually used,
+it is recommended to recreate containers explicitly.
+
+Recommended command:
+
+    docker compose up -d --force-recreate
+
+This command ensures that:
+- Existing containers are stopped and recreated
+- The latest local Docker images are used
+- No stale containers remain from previous runs
+
+Use --force-recreate when:
+- You rebuilt the SIE Docker image locally
+- You updated MCP setup scripts or templates
+- You want to verify demo or production images reliably
+
+This practice is especially useful when validating demo environments
+or testing production images before publishing.
+
+## 🔀 Choose Your MCP Client
+
+You can use **VS Code** or **ChatGPT** as an MCP client.
+
+In addition to MCP-based clients, SIE also exposes a traditional REST API.
+This allows you to use SIE **without MCP**, using standard HTTP tools.
+
+---
+
+## Option C: REST API (Direct HTTP Access)
+
+The REST API is useful for:
+- Quick testing with `curl` or HTTP clients
+- Integration with existing applications
+- Understanding SIE behavior without MCP tooling
+
+### REST Endpoint
+
+http://localhost:9050/sie/query
+
+### Example REST query
+
+```bash
+curl -X POST http://localhost:9050/sie/query \
+  -H "Content-Type: application/json" \
+  -d '{ "query": "Explain SimpleModelObject." }'
+```
+
+The REST API and MCP API share the same underlying semantic engine.
+The REST interface is intentionally kept simple and stateless.
+
+---
+
+## MCP Client (stdio-based CLI)
+
+The `mcp-client` can be used as a standalone **stdio-based CLI**.
+
+It accepts:
+- MCP JSON-RPC messages via STDIN
+- Interactive **meta-commands** starting with `:` for client control
+
+This allows developers to inspect and debug MCP initialization and capabilities
+without relying on VS Code or other MCP runtimes.
+
+---
+
+## Current status of VS Code MCP integration
+
+At the time of writing, VS Code does not automatically invoke
+the MCP stdio server defined in `.vscode/settings.json`.
+
+Although the configuration is syntactically correct,
+the MCP runtime is not activated, and `initialize` / `get_manifest`
+are not triggered from VS Code.
+
+This repository therefore provides a **CLI-based workflow**
+as a practical and reproducible alternative.
+
+---
+
+## MCP Client Meta Commands
+
+The following meta-commands are supported by `mcp-client`:
+
+- `:help`  
+  Show available meta-commands.
+
+- `:status`  
+  Show client role, transport, and REST endpoint.
+
+- `:initialize`  
+  Dump the merged MCP initialize response (`initialize.json` + `mcp.json`).
+
+- `:manifest`  
+  Dump the MCP capabilities (tools definition).
+
+- `:exit`, `:quit`  
+  Exit the client immediately.
+
+---
+
+## Exiting the MCP client
+
+Because this client runs in stdio mode, signal handling may vary
+depending on the execution environment (terminal, Docker, Emacs, etc.).
+
+The following meta-commands are always supported and recommended:
+
+- `:exit`
+- `:quit`
+
+These commands terminate the client reliably, even when Ctrl-C or EOF
+are not propagated correctly.
+
+---
+
+## Why a CLI?
+
+MCP is designed as a tool-connection protocol, but its runtime support
+in editors is still evolving.
+
+Providing a CLI allows:
+- deterministic inspection of MCP initialization
+- debugging without editor-specific behavior
+- reproducible demos and documentation
+
+This CLI is therefore **not a fallback**, but a deliberate design choice.
+
+---
+
 ## 📄 License
 
 ### Software (code)

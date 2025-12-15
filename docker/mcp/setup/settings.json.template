@@ -1,0 +1,8 @@
+{
+  "mcp.servers": {
+    "sie": {
+      "command": "${workspaceFolder}/bin/sie-mcp",
+      "args": []
+    }
+  }
+}

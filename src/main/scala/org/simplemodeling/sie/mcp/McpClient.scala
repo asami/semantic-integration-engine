@@ -33,7 +33,7 @@ import org.http4s.client.Client
  *
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 12, 2025 (clarified multi-role architecture: client/server/proxy)
+ * @version Dec. 17, 2025 (clarified multi-role architecture: client/server/proxy)
  * @author  ASAMI, Tomoharu
  */
 trait InitializeHandler:
@@ -59,9 +59,20 @@ class McpClient(restUrl: String)(using client: Client[IO]):
   private val initHandler: InitializeHandler = new MergedResourceInitializeHandler()
 
   def start(): Unit =
+    // Register shutdown hook to make Ctrl-C / SIGTERM visible and debuggable
+    sys.addShutdownHook {
+      System.err.println("[mcp-client] shutdown hook called")
+    }
+
+    val reader = scala.io.StdIn
     while true do
-      val line = scala.io.StdIn.readLine()
-      if line != null && line.trim.nonEmpty then handle(line)
+      val line = reader.readLine()
+      if line == null then
+        // stdin closed (EOF) -> exit normally
+        System.err.println("[mcp-client] stdin closed, exiting")
+        sys.exit(0)
+      else if line.trim.nonEmpty then
+        handle(line)
 
   private def handle(input: String): Unit =
     parse(input) match
@@ -90,3 +101,61 @@ class McpClient(restUrl: String)(using client: Client[IO]):
                 McpResponse(id = req.id, error = Some(McpError(404, s"Unknown: $other")))
 
             println(resp.asJson.noSpaces)
+
+  private def handleMetaCommand(cmd: String): Unit =
+    cmd match
+      case ":exit" | ":quit" =>
+        System.err.println("[mcp-client] exit requested by meta-command")
+        sys.exit(0)
+
+      case ":help" =>
+        System.err.println(
+          """[mcp-client] meta commands:
+            |  :help         show this help
+            |  :status       show client status
+            |  :initialize   dump merged initialize response
+            |  :manifest     dump MCP manifest (tools definition)
+            |  :exit         exit client
+            |  :quit         exit client
+            |""".stripMargin
+        )
+
+      case ":status" =>
+        System.err.println(
+          s"""[mcp-client] status:
+             |  role        = stdio MCP proxy
+             |  transport   = stdin/stdout
+             |  restUrl     = ${restUrl}
+             |""".stripMargin
+        )
+
+      case ":initialize" =>
+        val init = initHandler.onInitialize(
+          McpRequest(
+            jsonrpc = "2.0",
+            id = Some("meta"),
+            method = "initialize",
+            params = None
+          )
+        )
+        println(init.spaces2)
+
+      case ":manifest" =>
+        val manifest = initHandler
+          .onInitialize(
+            McpRequest(
+              jsonrpc = "2.0",
+              id = Some("meta"),
+              method = "initialize",
+              params = None
+            )
+          )
+          .hcursor
+          .downField("capabilities")
+          .focus
+          .getOrElse(Json.Null)
+
+        println(manifest.spaces2)
+
+      case other =>
+        System.err.println(s"[mcp-client] unknown meta command: $other (try :help)")
