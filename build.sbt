@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.5-SNAPSHOT",
+    version := "0.0.5",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -41,6 +41,14 @@ lazy val root = (project in file("."))
       version,
       scalaVersion,
       sbtVersion,
+
+      // build number (JST date)
+      BuildInfoKey.action("build") {
+        val fmt = new java.text.SimpleDateFormat("yyyyMMdd")
+        fmt.setTimeZone(java.util.TimeZone.getTimeZone("JST"))
+        fmt.format(new java.util.Date())
+      },
+
       BuildInfoKey.map(homepage){ case (_, url) => "homepage" -> url.toString },
       BuildInfoKey.map(organizationName){ case (_, org) => "author" -> org }
     ),
@@ -138,3 +146,4 @@ dockerDeploy := {
 
   log.info("dockerDeploy completed.")
 }
+
