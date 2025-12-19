@@ -14,6 +14,7 @@ import fs2.Stream
 import org.simplemodeling.sie.mcp.McpWebSocketServer
 import org.simplemodeling.sie.config.ServerMode
 import org.simplemodeling.sie.status.Status
+import org.simplemodeling.sie.interaction.SieService
 
 import cats.syntax.semigroupk.*
 
@@ -231,7 +232,8 @@ class HttpRagServer(
   }
 
   private def websocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
-    new McpWebSocketServer(service).routes(wsb)
+    val sieService = new SieService(service)
+    new McpWebSocketServer(sieService).routes(wsb)
 
   def start: IO[Nothing] =
     EmberServerBuilder

@@ -3,9 +3,11 @@ package org.simplemodeling.sie.mcp
 import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
-import cats.effect.*
-import cats.effect.unsafe.implicits.global
-import org.http4s.client.Client
+import org.simplemodeling.sie.mcp.core.*
+
+import java.net.URI
+import java.net.http.{HttpClient, WebSocket}
+import java.util.concurrent.CompletableFuture
 
 /*
  * Architectural Role:
@@ -33,11 +35,11 @@ import org.http4s.client.Client
  *
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 17, 2025 (clarified multi-role architecture: client/server/proxy)
+ * @version Dec. 20, 2025 (clarified multi-role architecture: client/server/proxy)
  * @author  ASAMI, Tomoharu
  */
 trait InitializeHandler:
-  def onInitialize(req: McpRequest): Json
+  def onInitialize(): Json
 
 class MergedResourceInitializeHandler extends InitializeHandler:
   def loadJsonResource(name: String): Json =
@@ -49,14 +51,68 @@ class MergedResourceInitializeHandler extends InitializeHandler:
   def merge(a: Json, b: Json): Json =
     a.deepMerge(b)
 
-  def onInitialize(req: McpRequest): Json =
+  def onInitialize(): Json =
     val init = loadJsonResource("initialize.json")
     val manifest = loadJsonResource("mcp.json")
     merge(init, manifest)
 
-class McpClient(restUrl: String)(using client: Client[IO]):
+class McpClient():
 
   private val initHandler: InitializeHandler = new MergedResourceInitializeHandler()
+
+  private given McpContext =
+    McpContext(
+      sessionId = "stdio-session",
+      traceId   = java.util.UUID.randomUUID().toString
+    )
+
+  private val wsUrl: String =
+    sys.env.getOrElse("MCP_WS_URL", "ws://localhost:9050/mcp")
+
+  private val httpClient: HttpClient =
+    HttpClient.newHttpClient()
+
+  private def withWebSocketOnce(input: String): Unit = {
+    val response = new CompletableFuture[String]()
+
+    val listener = new WebSocket.Listener {
+      private val buffer = new StringBuilder
+
+      override def onOpen(webSocket: WebSocket): Unit = {
+        webSocket.request(1)
+      }
+
+      override def onText(
+        webSocket: WebSocket,
+        data: CharSequence,
+        last: Boolean
+      ): java.util.concurrent.CompletionStage[?] = {
+        buffer.append(data)
+        if last then
+          response.complete(buffer.toString())
+        webSocket.request(1)
+        CompletableFuture.completedFuture(())
+      }
+
+      override def onError(webSocket: WebSocket, error: Throwable): Unit = {
+        response.completeExceptionally(error)
+      }
+    }
+
+    val ws =
+      httpClient
+        .newWebSocketBuilder()
+        .subprotocols("mcp")
+        .buildAsync(URI.create(wsUrl), listener)
+        .join()
+
+    try
+      ws.sendText(input, true).join()
+      val result = response.join()
+      println(result)
+    finally
+      ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye").join()
+  }
 
   def start(): Unit =
     // Register shutdown hook to make Ctrl-C / SIGTERM visible and debuggable
@@ -72,35 +128,42 @@ class McpClient(restUrl: String)(using client: Client[IO]):
         System.err.println("[mcp-client] stdin closed, exiting")
         sys.exit(0)
       else if line.trim.nonEmpty then
-        handle(line)
+        if line.trim.startsWith(":") then
+          handleMetaCommand(line.trim)
+        else
+          handle(line)
 
   private def handle(input: String): Unit =
     parse(input) match
       case Left(parseErr) =>
         println(
-          McpResponse(error = Some(McpError(1, parseErr.toString))).asJson.noSpaces
+          Json.obj(
+            "error" -> Json.obj(
+              "message" -> Json.fromString(parseErr.toString)
+            )
+          ).noSpaces
         )
 
       case Right(json) =>
-        json.as[McpRequest] match
-          case Left(decodeErr) =>
+        val cursor = json.hcursor
+        val method = cursor.get[String]("method").getOrElse("")
+
+        method match
+          case "initialize" =>
+            val init = initHandler.onInitialize()
+            println(init.noSpaces)
+
+          case "tools/list" | "tools/call" =>
+            withWebSocketOnce(input)
+
+          case other =>
             println(
-              McpResponse(error = Some(McpError(2, decodeErr.toString))).asJson.noSpaces
+              Json.obj(
+                "error" -> Json.obj(
+                  "message" -> Json.fromString(s"Unsupported method: $other")
+                )
+              ).noSpaces
             )
-
-          case Right(req) =>
-            val resp = req.method match
-              case "initialize" =>
-                val merged = initHandler.onInitialize(req)
-                McpResponse(id = req.id, result = Some(merged))
-
-              case "tools/sie.query" =>
-                McpResponse(id = req.id, error = Some(McpError(501, "Forwarding not implemented")))
-
-              case other =>
-                McpResponse(id = req.id, error = Some(McpError(404, s"Unknown: $other")))
-
-            println(resp.asJson.noSpaces)
 
   private def handleMetaCommand(cmd: String): Unit =
     cmd match
@@ -125,31 +188,16 @@ class McpClient(restUrl: String)(using client: Client[IO]):
           s"""[mcp-client] status:
              |  role        = stdio MCP proxy
              |  transport   = stdin/stdout
-             |  restUrl     = ${restUrl}
              |""".stripMargin
         )
 
       case ":initialize" =>
-        val init = initHandler.onInitialize(
-          McpRequest(
-            jsonrpc = "2.0",
-            id = Some("meta"),
-            method = "initialize",
-            params = None
-          )
-        )
+        val init = initHandler.onInitialize()
         println(init.spaces2)
 
       case ":manifest" =>
         val manifest = initHandler
-          .onInitialize(
-            McpRequest(
-              jsonrpc = "2.0",
-              id = Some("meta"),
-              method = "initialize",
-              params = None
-            )
-          )
+          .onInitialize()
           .hcursor
           .downField("capabilities")
           .focus

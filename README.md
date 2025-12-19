@@ -52,6 +52,9 @@ when integrated with the semantic knowledge base of SimpleModeling.org.**
 SIE integrates both symbolic and embedding-based retrieval to produce
 context-aware answers grounded in the SimpleModeling knowledge graph.
 
+This overview focuses on runtime and deployment components.
+MCP protocol design, adapters, and tool semantics are documented separately.
+
 ---
 
 ## 🔧 Build & Run (Development)
@@ -212,7 +215,89 @@ Use --force-recreate when:
 This practice is especially useful when validating demo environments
 or testing production images before publishing.
 
+
 ## 🔀 Choose Your MCP Client
+
+SIE supports multiple MCP clients by separating the MCP Core
+from protocol-specific adapters (ChatGPT / JSON-RPC).
+
+## 🧰 MCP Tool Naming Conventions (SIE)
+
+```
+SIE exposes its MCP tools as a **stable semantic API** shared by both
+ChatGPT and VS Code MCP clients.
+
+Tool names are designed to be:
+- Semantically meaningful
+- Predictable for LLM tool selection
+- Stable across versions
+- Independent of transport or implementation details
+
+### Naming Rules
+
+- Tool names use **camelCase**
+- Structure: `<verb><Object>`
+- Verbs represent **intent / operation**
+- Objects represent **SIE domain vocabulary**
+- Tool names are treated as **stable APIs** (avoid breaking changes)
+
+### Allowed Verbs
+
+| Verb | Meaning |
+|------|--------|
+| `explain` | Explain a concept, model, or document |
+| `query` | Perform conditional or exploratory queries |
+| `list` | List available resources |
+| `get` | Retrieve a single resource by identifier |
+| `resolve` | Resolve references or relationships |
+| `analyze` | Perform analysis or evaluation |
+| `validate` | Validate structure or constraints |
+| `generate` | Generate derived artifacts |
+
+Avoid vague verbs such as `do`, `run`, `execute`, or `process`.
+
+### Standard SIE Objects
+
+| Object | Meaning |
+|--------|--------|
+| `Concept` | Conceptual entity (LexiDox / CML) |
+| `Graph` | Semantic knowledge graph |
+| `Document` | Structured document |
+| `Passage` | Document fragment |
+| `Model` | Domain or system model |
+| `Entity` | Domain entity |
+| `Vocabulary` | Controlled vocabulary |
+| `Ontology` | RDF / OWL structure |
+
+### Example Tool Names
+
+- `explainConcept`
+- `queryGraph`
+- `listDocuments`
+- `getDocument`
+- `resolveConcept`
+- `analyzeModel`
+
+### Versioning Policy
+
+- Tool names are **not renamed** once published
+- Breaking changes require a version suffix:
+
+```
+explainConceptV2
+```
+
+- Older versions may coexist during migration
+
+### Design Rationale
+
+- Tool names represent **semantic intent**, not implementation
+- Transport details (`ws`, `stdio`, `mcp`) are intentionally excluded
+- Internal technologies (`rdf`, `sparql`, `vector`, `embedding`) are hidden
+- This allows the same tool set to be used consistently from:
+  - ChatGPT (WebSocket-based MCP)
+  - VS Code (stdio-based MCP)
+```
 
 You can use **VS Code** or **ChatGPT** as an MCP client.
 

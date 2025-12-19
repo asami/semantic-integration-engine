@@ -55,8 +55,7 @@ services:
         condition: service_healthy
 
     ports:
-      - "9050:9050"   # HTTP RAG API
-      - "9051:9051"   # MCP WebSocket API
+      - "9050:9050"   # HTTP + MCP WebSocket API (/mcp)
 
     environment:
       SIE_MODE: demo
@@ -69,10 +68,24 @@ services:
       SIE_EMBEDDING_MODE: "oss"
       SIE_EMBEDDING_ENDPOINT: http://sie-embedding:8081/embed
 
-      # ---- MCP WebSocket port ----
-      SIE_MCP_PORT: 9051
-
     restart: unless-stopped
+    networks:
+      - sie-net
+
+  #######################################################################
+  # SIE-MCP — MCP stdio client (transient, non-daemon)
+  #######################################################################
+  sie-mcp:
+    image: ghcr.io/asami/sie:latest
+    container_name: sie-mcp
+    entrypoint: ["/opt/sie/bin/mcp-client"]
+    stdin_open: true
+    tty: false
+    depends_on:
+      sie:
+        condition: service_started
+    environment:
+      MCP_WS_URL: ws://sie:9050/mcp
     networks:
       - sie-net
 

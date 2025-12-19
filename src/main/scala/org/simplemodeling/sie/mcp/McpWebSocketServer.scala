@@ -14,7 +14,7 @@ import org.http4s.dsl.io.*
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 
-import org.simplemodeling.sie.service.RagService
+import org.simplemodeling.sie.interaction.{ExplainConcept, Query, SieService}
 import org.simplemodeling.sie.BuildInfo
 
 import cats.effect.unsafe.implicits.global
@@ -33,8 +33,8 @@ import cats.effect.unsafe.implicits.global
  *
  * This server:
  *   1) Receives JSON
- *   2) Dispatches "tools.sie.query" to RagService
- *   3) Returns RagResult as JSON-RPC response
+ *   2) Dispatches "tools.sie.query" to SieService
+ *   3) Returns result as JSON-RPC response
  *
  * NOTE:
  *  - This is a minimal skeleton
@@ -45,7 +45,7 @@ import cats.effect.unsafe.implicits.global
  * @version Dec.  5, 2025
  * @author  ASAMI, Tomoharu
  */
-class McpWebSocketServer(service: RagService):
+class McpWebSocketServer(service: SieService):
 
   def routes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
@@ -207,26 +207,6 @@ class McpWebSocketServer(service: RagService):
     patchedMeta
 
   // ----------------------------------------
-  // Locale parsing helper (fallback to RagService context)
-  // ----------------------------------------
-  private def parseLocaleOrDefault(
-      raw: Option[String],
-      defaultLocale: java.util.Locale
-  ): java.util.Locale = {
-    raw match {
-      case Some(s) if s.trim.nonEmpty =>
-        val loc = java.util.Locale.forLanguageTag(s.trim)
-        // forLanguageTag returns a Locale even if invalid;
-        // detect empty language and fallback
-        if (loc.getLanguage == null || loc.getLanguage.isEmpty)
-          defaultLocale
-        else
-          loc
-      case _ =>
-        defaultLocale
-    }
-  }
-
   private def processJsonRpc(msg: String): IO[String] =
     parse(msg) match
       case Left(err) =>
@@ -264,36 +244,35 @@ class McpWebSocketServer(service: RagService):
             toolName match
               case "tools.sie.query" =>
                 val query = args.get[String]("query").getOrElse("")
-                service.runIO(query).map { rag =>
+                val result = service.execute(Query(query = query))
+                IO.pure(
                   io.circe.Json.obj(
                     "type" -> io.circe.Json.fromString("toolResult"),
                     "tool" -> io.circe.Json.fromString("tools.sie.query"),
-                    "result" -> rag.asJson
+                    "result" -> io.circe.Json.fromString(result.toString)
                   ).noSpaces
-                }
+                )
 
               case "tools.sie.explainConcept" =>
                 val uri        = args.get[String]("uri").getOrElse("")
-                val localeOpt  = args.get[String]("locale").toOption
-                val locale     = parseLocaleOrDefault(localeOpt, service.context.defaultLocale)
-
-                service.explainConcept(uri, locale).map { exp =>
+                val result = service.execute(ExplainConcept(name = uri))
+                IO.pure(
                   io.circe.Json.obj(
                     "type"   -> io.circe.Json.fromString("toolResult"),
                     "tool"   -> io.circe.Json.fromString("tools.sie.explainConcept"),
-                    "result" -> exp.asJson
+                    "result" -> io.circe.Json.fromString(result.toString)
                   ).noSpaces
-                }
+                )
 
               case "tools.sie.getNeighbors" =>
-                val uri = args.get[String]("uri").getOrElse("")
-                service.getNeighbors(uri).map { graph =>
+                IO.pure(
                   io.circe.Json.obj(
-                    "type" -> io.circe.Json.fromString("toolResult"),
-                    "tool" -> io.circe.Json.fromString("tools.sie.getNeighbors"),
-                    "result" -> graph.asJson
+                    "type" -> io.circe.Json.fromString("error"),
+                    "error" -> io.circe.Json.obj(
+                      "message" -> io.circe.Json.fromString("tool not supported: tools.sie.getNeighbors")
+                    )
                   ).noSpaces
-                }
+                )
 
               case other =>
                 IO.pure(

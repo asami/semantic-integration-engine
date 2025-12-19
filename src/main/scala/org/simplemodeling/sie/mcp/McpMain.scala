@@ -1,21 +1,13 @@
 package org.simplemodeling.sie.mcp
 
-import cats.effect.*
-import org.http4s.ember.client.*
-
 /*
  * @since   Nov. 20, 2025
- * @version Nov. 25, 2025
+ *  version Nov. 25, 2025
+ * @version Dec. 19, 2025
  * @author  ASAMI, Tomoharu
  */
-object McpClientMain extends IOApp.Simple:
+object McpClientMain:
 
-  def run: IO[Unit] =
-    val rest = sys.env.getOrElse("RAG_REST_URL", "http://localhost:8080")
-
-    EmberClientBuilder.default[IO].build.use { client =>
-      IO.blocking {
-        val mcp = new McpClient(rest)(using client)
-        mcp.start()
-      }
-    }
+  def main(args: Array[String]): Unit =
+    val mcp = new McpClient()
+    mcp.start()

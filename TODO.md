@@ -38,6 +38,19 @@ All items here are deferred by design, not forgotten.
   - CLI as permanent inspection/debug interface
   - or CLI as fallback until editor MCP runtimes mature
 
+### 1.4 MCP Core & Protocol Adapters (Current Focus)
+- [ ] Implement MCP Core (protocol-agnostic)
+  - initialize / toolsList / callTool / resourcesList
+  - implicit McpContext (sessionId / traceId)
+- [ ] Define McpResult (Success / Failure) and Core error model
+- [ ] Implement JSON-RPC Adapter (stdio)
+  - strict JSON-RPC 2.0 decoding
+  - error mapping from Core → JSON-RPC
+- [ ] Implement ChatGPT MCP Adapter (WebSocket)
+  - ChatGPT MCP message decoding
+  - mapping to MCP Core requests
+- [ ] Ensure both adapters share the same MCP Core implementation
+
 ## 1.x CLI (Command Line Interface)
 
 ### 1.x.1 CLI Positioning & Scope
@@ -177,6 +190,11 @@ All items here are deferred by design, not forgotten.
 ---
 
 ## 5. Observability & Logs
+
+NOTE:
+Observability work depends on stable sessionId / traceId / eventId
+introduced in the MCP Core. Implementation is deferred until
+MCP Core and adapters are functional.
 
 ### 5.1 Log Structure
 - [ ] Structured logging (JSON-ready)
