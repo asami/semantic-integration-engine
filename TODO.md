@@ -359,8 +359,58 @@ MCP Core and adapters are functional.
 
 ---
 
-## Notes
 
-- Step B (agent-mode behavioral branching) is intentionally deferred.
-- All TODOs must respect the Design Axes defined in RagServerMain.
-- No item here should collapse Architecture / Topology / RuntimeFeatures axes.
+## Refactoring & Semantic Stability Rules (General)
+
+
+These rules apply to SIE development **at all times**, regardless of phase.
+
+- [ ] Structural refactoring MUST NOT introduce semantic changes
+  - no loss of meaning, fields, or information content
+  - no collapsing structured data into less expressive forms
+- [ ] If a semantic change is required:
+  - it MUST be proposed explicitly as a **spec change**
+  - it MUST be documented with rationale and impact
+  - it MUST NOT be mixed into refactoring-only commits
+- [ ] Refactoring commits SHOULD be:
+  - mechanically verifiable
+  - behavior-preserving by default
+
+- [ ] Add regression checks for semantic stability
+  - detect accidental collapsing of structured results (e.g. ConceptHit → String)
+  - verify that refactoring-only commits preserve result schemas
+  - especially for:
+    - concepts
+    - passages
+    - graph
+
+- [ ] Revisit QueryResult role separation
+  - distinguish:
+    - canonical semantic result (structured)
+    - protocol-facing DTO (REST / MCP)
+    - human-facing rendering (ChatGPT)
+  - avoid collapsing meaning at OperationLanguage level
+
+
+## Demo-Specific Stability Notes (Time-Limited)
+
+
+These rules apply **only during the current VSCode / MCP demo stabilization phase**.
+They are intentionally time-scoped and MUST NOT be treated as permanent constraints.
+
+### Demo Result Consistency Rule
+
+- [ ] Until the MCP / VSCode demo is completed:
+  - REST, MCP (stdio / websocket), and ChatGPT routes MUST return
+    **semantically equivalent result structures**
+  - protocol differences may affect transport only, not meaning
+- [ ] Demo validation depends on:
+  - identical fields and values across protocols
+  - no protocol-specific data loss or reshaping
+- [ ] This section MUST be revisited and either removed or archived
+  - once the demo phase is declared complete
+
+- [ ] Clarify ChatGPT-specific rendering as a deliberate exception
+  - canonical results remain structured
+  - natural-language output is allowed only at final egress
+  - not a precedent for REST / MCP responses

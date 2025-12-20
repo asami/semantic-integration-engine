@@ -1,6 +1,7 @@
 package org.simplemodeling.sie.server
 
 import io.circe.Json
+import io.circe.syntax.*
 import org.http4s.{Method, Status, Uri}
 import org.simplemodeling.sie.interaction.*
 
@@ -90,8 +91,8 @@ final class RestAdapter extends ProtocolEgress[RestResponse] {
     result match
       case QueryResult(concepts, passages, graph) =>
         Json.obj(
-          "concepts" -> Json.fromValues(concepts.map(Json.fromString)),
-          "passages" -> Json.fromValues(passages.map(Json.fromString)),
+          "concepts" -> concepts.asJson,
+          "passages" -> passages.asJson,
           "graph" -> Json.fromString(graph)
         )
 

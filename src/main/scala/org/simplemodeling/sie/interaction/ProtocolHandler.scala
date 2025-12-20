@@ -16,7 +16,13 @@ final class ProtocolHandler[I, O](
       case Left(err) =>
         egress.encode(interaction.fail(err))
       case Right(req) =>
-        egress.encode(interaction.execute(req))
+        val normalized =
+          req.payload match
+            case OperationPayload.Call(q: Query) =>
+              req.copy(payload = OperationPayload.Call(ProtocolHandler.normalizeQueryForDemo(q)))
+            case _ =>
+              req
+        egress.encode(interaction.execute(normalized))
     }
 }
 
@@ -26,6 +32,11 @@ trait InteractionContext {
 }
 
 object ProtocolHandler {
+  // Demo-default normalization for Query to match legacy "return everything" behavior.
+  private def normalizeQueryForDemo(query: Query): Query =
+    query.copy(
+      limit = query.limit.orElse(Some(100))
+    )
 
   // Placeholder WebSocket carriers for aggregation
   sealed trait WsInput
@@ -157,7 +168,7 @@ object ProtocolHandler {
         result match
           case QueryResult(concepts, passages, graph) =>
             val conceptsText =
-              if concepts.nonEmpty then concepts.mkString("concepts: ", ", ", "") else ""
+              if concepts.nonEmpty then concepts.map(_.label).mkString("concepts: ", ", ", "") else ""
             val passagesText =
               if passages.nonEmpty then passages.mkString("passages: ", ", ", "") else ""
             val graphText =
@@ -440,9 +451,9 @@ object ProtocolHandler {
         result match
           case QueryResult(concepts, passages, graph) =>
             Json.obj(
-              "concepts" -> Json.fromValues(concepts.map(Json.fromString)),
-              "passages" -> Json.fromValues(passages.map(Json.fromString)),
-              "graph" -> parse(graph).getOrElse(Json.fromString(graph))
+              "concepts" -> concepts.asJson,
+              "passages" -> passages.asJson,
+              "graph"    -> parse(graph).getOrElse(Json.fromString(graph))
             )
 
           case ExplainConceptResult(description) =>
@@ -615,9 +626,9 @@ object ProtocolHandler {
         result match
           case QueryResult(concepts, passages, graph) =>
             Json.obj(
-              "concepts" -> Json.fromValues(concepts.map(Json.fromString)),
-              "passages" -> Json.fromValues(passages.map(Json.fromString)),
-              "graph" -> Json.fromString(graph)
+              "concepts" -> concepts.asJson,
+              "passages" -> passages.asJson,
+              "graph"    -> graph.asJson
             )
 
           case ExplainConceptResult(description) =>

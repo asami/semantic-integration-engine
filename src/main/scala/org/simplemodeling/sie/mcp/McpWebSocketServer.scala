@@ -313,8 +313,8 @@ object McpWebSocketServer {
       result match
         case QueryResult(concepts, passages, graph) =>
           Json.obj(
-            "concepts" -> Json.fromValues(concepts.map(Json.fromString)),
-            "passages" -> Json.fromValues(passages.map(Json.fromString)),
+            "concepts" -> concepts.asJson,
+            "passages" -> passages.asJson,
             "graph" -> parse(graph).fold(_ => Json.fromString(graph), identity)
           )
 

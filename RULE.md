@@ -2117,3 +2117,60 @@ def resumeProcessing(): IO[Unit]
 - Lifecycle transitions are explicit and reviewable
 - Resource ownership and responsibility are clear
 - Components behave predictably across state changes
+
+# Specification Change Control
+
+This section defines rules for **changing specifications and semantics**
+in order to preserve debuggability, comparability, and architectural intent.
+
+## Separation of Structural and Semantic Changes
+
+- Structural refactoring (file layout, class extraction, protocol wiring, etc.)
+  **MUST NOT change semantics or observable behavior**.
+- Semantic changes (meaning of data, fields, behavior, contracts)
+  **MUST be handled separately** from structural refactoring.
+
+Rationale:
+Mixing structural and semantic changes makes debugging and verification
+significantly harder and obscures the true cause of regressions.
+
+## Mandatory Proposal and Approval Process
+
+Any semantic or specification change MUST follow these steps:
+
+1. **Proposal**
+   - Clearly describe what changes semantically
+   - State what existing behavior or contract is affected
+   - Explain motivation and expected benefit
+
+2. **Explicit Approval**
+   - Confirm that the change is intentional
+   - Confirm that breakage or difference is acceptable
+
+3. **Documentation**
+   - Record the decision in TODO, Design Note, or equivalent artifact
+   - Include rationale and scope of impact
+
+Only after these steps may implementation begin.
+
+## Demo and Stabilization Phase Rule
+
+During demo preparation or stabilization phases:
+
+- Existing observable behavior is treated as the **ground truth**
+- Specification changes are **frozen by default**
+- Any exception MUST be explicitly justified and documented
+
+This rule exists to ensure:
+- Reproducibility of demos
+- Fair comparison between protocols (REST / MCP / ChatGPT)
+- Clear separation between architectural work and feature evolution
+
+## Intentional Output Divergence
+
+When intentionally returning different representations
+(e.g. structured JSON vs natural language for ChatGPT):
+
+- The divergence MUST be explicit and documented
+- The structured canonical representation remains the reference
+- Divergence is treated as a presentation layer concern, not a semantic change

@@ -9,6 +9,8 @@ target
 boot
 fuseki/databases
 chroma-data
+docker/compose/fuseki/databases
+docker/compose/src
 dist
 
 ### Metals (VS Code Scala extension) ###

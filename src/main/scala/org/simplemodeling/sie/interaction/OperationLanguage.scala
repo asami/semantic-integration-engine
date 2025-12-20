@@ -1,5 +1,9 @@
 package org.simplemodeling.sie.interaction
 
+import io.circe.*
+
+import io.circe.*
+
 /*
  * @since   Dec. 20, 2025
  * @version Dec. 20, 2025
@@ -24,9 +28,21 @@ final case class ExplainConcept(
 
 trait SieOperationResult
 
+final case class Concept(
+  uri: String,
+  label: String,
+  lang: Option[String]
+) derives Encoder
+
+final case class Passage(
+  id: String,
+  text: String,
+  score: Option[Double] = None
+) derives Encoder
+
 final case class QueryResult(
-  concepts: Seq[String] = Nil,
-  passages: Seq[String] = Nil,
+  concepts: Seq[Concept] = Nil,
+  passages: Seq[Passage] = Nil,
   graph: String = "{}"
 ) extends SieOperationResult
 

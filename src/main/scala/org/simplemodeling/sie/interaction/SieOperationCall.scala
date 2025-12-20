@@ -35,8 +35,8 @@ final class QueryOperationCall(
     val rag = ragService.run(op.query)
 
     QueryResult(
-      concepts = rag.concepts.map(_.label),
-      passages = rag.passages.map(_.text),
+      concepts = rag.concepts.map(c => Concept(c.uri, c.label, c.lang)),
+      passages = rag.passages.map(p => Passage(p.id, p.text, p.score)),
       graph    = rag.graph.asJson.noSpaces
     )
   }

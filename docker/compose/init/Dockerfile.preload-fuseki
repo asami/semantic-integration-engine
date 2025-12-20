@@ -1,0 +1,31 @@
+# ============================================================
+# SimpleModeling.org / SIE Demo 用 Preloaded Fuseki
+# ------------------------------------------------------------
+# - config.ttl, databases/, shiro.ini を事前ロード済み
+# - 起動後すぐに SPARQL Query が利用可能
+# ============================================================
+
+# Base Fuseki image
+FROM --platform=linux/amd64 stain/jena-fuseki:4.8.0
+
+# ------------------------------------------------------------
+# /fuseki 以下に配置する内容:
+#   config.ttl   : データセット設定（ds）
+#   databases/   : 事前ロード済み TDB2 ストア
+#   shiro.ini    : 認証設定（demo は anon）
+#
+# これをイメージにコピーするだけで、即動作する Fuseki が完成。
+# ------------------------------------------------------------
+COPY fuseki /fuseki
+
+USER root
+RUN chown -R fuseki:fuseki /fuseki
+USER fuseki
+
+# Optional: Logging level for cleaner demo output
+ENV FUSEKI_LOG_LEVEL=INFO
+
+# Fuseki UI / SPARQL Query endpoint
+EXPOSE 3030
+
+ENTRYPOINT ["java", "-jar", "/jena-fuseki/fuseki-server.jar", "--config=/fuseki/config.ttl"]
