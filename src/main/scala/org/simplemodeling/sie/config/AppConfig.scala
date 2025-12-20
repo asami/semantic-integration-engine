@@ -8,7 +8,7 @@ import com.typesafe.config.ConfigFactory
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 13, 2025
+ * @version Dec. 21, 2025
  * @author  ASAMI, Tomoharu
  */
 enum ServerMode:
@@ -44,10 +44,27 @@ enum OperationalControl:
   case Managed
   case Unmanaged
 
+given ConfigReader[OperationalControl] =
+  ConfigReader[String].map {
+    case s if s.equalsIgnoreCase("managed")   => OperationalControl.Managed
+    case s if s.equalsIgnoreCase("unmanaged") => OperationalControl.Unmanaged
+    case other =>
+      throw new Exception(s"Invalid OperationalControl: $other")
+  }
+
 enum VectorDbMode:
   case Stable
   case Auto
   case Force
+
+given ConfigReader[VectorDbMode] =
+  ConfigReader[String].map {
+    case s if s.equalsIgnoreCase("stable") => VectorDbMode.Stable
+    case s if s.equalsIgnoreCase("auto")   => VectorDbMode.Auto
+    case s if s.equalsIgnoreCase("force")  => VectorDbMode.Force
+    case other =>
+      throw new Exception(s"Invalid VectorDbMode: $other")
+  }
 
 case class VectorDbLifecycleConfig(
   mode: VectorDbMode = VectorDbMode.Auto

@@ -41,10 +41,15 @@ services:
       retries: 20
 
   #######################################################################
-  # SIE — Semantic Integration Engine (HTTP + MCP WebSocket)
+  # SIE — Semantic Integration Engine (Demo)
+  #
+  # NOTE:
+  # - This demo explicitly uses application.demo.conf.
+  # - Do NOT rely on the image default ENTRYPOINT/CMD for demo behavior.
+  # - This preserves the historical demo behavior from docker-compose.demo.yml.
   #######################################################################
   sie:
-    image: ghcr.io/asami/sie:latest
+    image: ghcr.io/asami/sie:0.1.0-SNAPSHOT.g
     container_name: sie
     volumes:
       - .:/workspace/vscode-mcp
@@ -68,6 +73,12 @@ services:
       SIE_EMBEDDING_MODE: "oss"
       SIE_EMBEDDING_ENDPOINT: http://sie-embedding:8081/embed
 
+    command:
+      - java
+      - -Dconfig.file=/app/conf/application.demo.conf
+      - -jar
+      - /app/semantic-integration-engine.jar
+
     restart: unless-stopped
     networks:
       - sie-net
@@ -76,7 +87,7 @@ services:
   # SIE-MCP — MCP stdio client (transient, non-daemon)
   #######################################################################
   sie-mcp:
-    image: ghcr.io/asami/sie:latest
+    image: ghcr.io/asami/sie:0.1.0-SNAPSHOT.a
     container_name: sie-mcp
     entrypoint: ["/opt/sie/bin/mcp-client"]
     stdin_open: true
