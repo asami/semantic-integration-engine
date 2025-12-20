@@ -4,6 +4,11 @@ import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
 
+/*
+ * @since   Dec. 20, 2025
+ * @version Dec. 21, 2025
+ * @author  ASAMI, Tomoharu
+ */
 final class ProtocolHandler[I, O](
   ingress: ProtocolIngress[I],
   egress: ProtocolEgress[O]
@@ -302,6 +307,9 @@ object ProtocolHandler {
                   case "initialize" =>
                     Right(OperationRequest(req.id, OperationPayload.Initialize))
 
+                  case "get_manifest" =>
+                    Right(OperationRequest(req.id, OperationPayload.ToolsList))
+
                   case "tools/list" =>
                     Right(OperationRequest(req.id, OperationPayload.ToolsList))
 
@@ -402,33 +410,19 @@ object ProtocolHandler {
     // migrated from McpJsonRpcAdapter.scala
     final class McpJsonRpcAdapter(
       serverName: String,
-      serverVersion: String
+      serverVersion: String,
+      tools: List[OperationTool],
+      mergemanifestintoinitialize: Boolean
     ) extends ProtocolEgress[Json] {
 
       override def encode(result: OperationResult): Json =
         result.payload match
-          case OperationPayloadResult.Initialized(_, _, capabilities) =>
-            val body = Json.obj(
-              "serverName" -> Json.fromString(serverName),
-              "serverVersion" -> Json.fromString(serverVersion),
-              "capabilities" -> encodeCapabilities(capabilities)
-            )
+          case OperationPayloadResult.Initialized(_, _, _) =>
+            val body = _initialize_body()
             McpResponse(id = result.requestId, result = Some(body)).asJson
 
           case OperationPayloadResult.Tools(tools) =>
-            val toolsJson = Json.arr(
-              tools.map { tool =>
-                Json.obj(
-                  "name" -> Json.fromString(tool.name),
-                  "description" -> Json.fromString(tool.description),
-                  "input_schema" -> Json.obj(
-                    "type" -> Json.fromString("object"),
-                    "required" -> Json.arr(tool.required.map(Json.fromString)*)
-                  )
-                )
-              }*
-            )
-            val body = Json.obj("tools" -> toolsJson)
+            val body = Json.obj("tools" -> _tools_json(tools))
             McpResponse(id = result.requestId, result = Some(body)).asJson
 
           case OperationPayloadResult.Executed(opResult) =>
@@ -440,10 +434,31 @@ object ProtocolHandler {
             val err = McpError(code, error.message)
             McpResponse(id = result.requestId, error = Some(err)).asJson
 
-      private def encodeCapabilities(capabilities: Map[String, Any]): Json =
-        Json.obj(
-          capabilities.toSeq.map { case (key, value) =>
-            key -> Json.fromString(value.toString)
+      private def _initialize_body(): Json =
+        val basefields =
+          List(
+            Some("capabilities" -> Json.obj())
+          )
+
+        val merged =
+          if mergemanifestintoinitialize then
+            basefields :+ Some("tools" -> _tools_json(tools))
+          else
+            basefields
+
+        Json.obj(merged.flatten*)
+
+      private def _tools_json(tools: List[OperationTool]): Json =
+        Json.arr(
+          tools.map { tool =>
+            Json.obj(
+              "name" -> Json.fromString(tool.name),
+              "description" -> Json.fromString(tool.description),
+              "input_schema" -> Json.obj(
+                "type" -> Json.fromString("object"),
+                "required" -> Json.arr(tool.required.map(Json.fromString)*)
+              )
+            )
           }*
         )
 
@@ -493,15 +508,35 @@ object ProtocolHandler {
     object Egress extends ProtocolEgress[WsOutput] {
       private val delegate = new McpJsonRpcAdapter(
         serverName = "semantic-integration-engine",
-        serverVersion = "0.1.0"
+        serverVersion = "0.1.0",
+        tools = Nil,
+        mergemanifestintoinitialize = false
       )
 
       override def encode(result: OperationResult): WsOutput =
         WsOutput(delegate.encode(result).noSpaces)
     }
 
+    def handlerWithTools(
+      tools: List[OperationTool],
+      mergemanifestintoinitialize: Boolean
+    ): ProtocolHandler[WsInput, WsOutput] =
+      val egress = new ProtocolEgress[WsOutput] {
+        private val _delegate = new McpJsonRpcAdapter(
+          serverName = "semantic-integration-engine",
+          serverVersion = "0.1.0",
+          tools = tools,
+          mergemanifestintoinitialize = mergemanifestintoinitialize
+        )
+
+        override def encode(result: OperationResult): WsOutput =
+          WsOutput(_delegate.encode(result).noSpaces)
+      }
+
+      new ProtocolHandler[WsInput, WsOutput](Ingress, egress)
+
     val handler =
-      new ProtocolHandler[WsInput, WsOutput](Ingress, Egress)
+      handlerWithTools(Nil, false)
   }
 
   // =========================================================

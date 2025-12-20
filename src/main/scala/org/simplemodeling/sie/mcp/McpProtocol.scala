@@ -4,7 +4,8 @@ import io.circe.*
 
 /*
  * @since   Nov. 20, 2025
- * @version Nov. 25, 2025
+ *  version Nov. 25, 2025
+ * @version Dec. 21, 2025
  * @author  ASAMI, Tomoharu
  */
 case class McpRequest(
@@ -23,3 +24,15 @@ case class McpResponse(
 
 case class McpError(code: Int, message: String) derives Encoder
 
+object McpResponse:
+  def success(id: Option[String], resultjson: Json): McpResponse =
+    McpResponse(
+      id = id,
+      result = Some(resultjson)
+    )
+
+  def error(id: Option[String], code: Int, message: String): McpResponse =
+    McpResponse(
+      id = id,
+      error = Some(McpError(code, message))
+    )

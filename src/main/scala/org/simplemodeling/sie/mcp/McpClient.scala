@@ -3,7 +3,8 @@ package org.simplemodeling.sie.mcp
 import io.circe.*
 import io.circe.parser.*
 import io.circe.syntax.*
-import org.simplemodeling.sie.mcp.core.*
+import org.simplemodeling.sie.mcp.core.McpContext
+import com.typesafe.config.ConfigFactory
 
 import java.net.URI
 import java.net.http.{HttpClient, WebSocket}
@@ -35,30 +36,10 @@ import java.util.concurrent.CompletableFuture
  *
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 20, 2025 (clarified multi-role architecture: client/server/proxy)
+ * @version Dec. 21, 2025 (clarified multi-role architecture: client/server/proxy)
  * @author  ASAMI, Tomoharu
  */
-trait InitializeHandler:
-  def onInitialize(): Json
-
-class MergedResourceInitializeHandler extends InitializeHandler:
-  def loadJsonResource(name: String): Json =
-    val stream = getClass.getClassLoader.getResourceAsStream(name)
-    if stream == null then throw new RuntimeException(s"Resource not found: $name")
-    val text = scala.io.Source.fromInputStream(stream).mkString
-    parse(text).fold(throw _, identity)
-
-  def merge(a: Json, b: Json): Json =
-    a.deepMerge(b)
-
-  def onInitialize(): Json =
-    val init = loadJsonResource("initialize.json")
-    val manifest = loadJsonResource("mcp.json")
-    merge(init, manifest)
-
 class McpClient():
-
-  private val initHandler: InitializeHandler = new MergedResourceInitializeHandler()
 
   private given McpContext =
     McpContext(
@@ -72,7 +53,14 @@ class McpClient():
   private val httpClient: HttpClient =
     HttpClient.newHttpClient()
 
-  private def withWebSocketOnce(input: String): Unit = {
+  private def _merge_manifest_into_initialize(): Boolean =
+    val config = ConfigFactory.load()
+    if config.hasPath("mcp.merge-manifest-into-initialize") then
+      config.getBoolean("mcp.merge-manifest-into-initialize")
+    else
+      sys.env.get("SIE_MCP_MERGE_MANIFEST").exists(_.equalsIgnoreCase("true"))
+
+  private def _with_web_socket_once(input: String): String = {
     val response = new CompletableFuture[String]()
 
     val listener = new WebSocket.Listener {
@@ -108,11 +96,53 @@ class McpClient():
 
     try
       ws.sendText(input, true).join()
-      val result = response.join()
-      println(result)
+      response.join()
     finally
       ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye").join()
   }
+
+  private def _send_web_socket_once(input: String): Unit =
+    val result = _with_web_socket_once(input)
+    println(result)
+
+  private def _fetch_tools_list(requestid: Option[String]): Option[Json] =
+    val toolsrequest =
+      Json.obj(
+        "jsonrpc" -> Json.fromString("2.0"),
+        "id" -> requestid.map(Json.fromString).getOrElse(Json.Null),
+        "method" -> Json.fromString("tools/list")
+      )
+
+    val response = _with_web_socket_once(toolsrequest.noSpaces)
+
+    parse(response).toOption
+      .flatMap(_.hcursor.downField("result").downField("tools").focus)
+
+  private def _render_initialize(requestid: Option[String]): String =
+    val base =
+      List(
+        Some("capabilities" -> Json.obj())
+      )
+
+    val merged =
+      if _merge_manifest_into_initialize() then
+        val toolsjson = _fetch_tools_list(requestid)
+          .getOrElse(Json.arr())
+        base :+ Some("tools" -> toolsjson)
+      else
+        base
+
+    McpResponse
+      .success(requestid, Json.obj(merged.flatten*))
+      .asJson
+      .noSpaces
+
+  private def _render_manifest(requestid: Option[String]): String =
+    val toolsjson = _fetch_tools_list(requestid).getOrElse(Json.arr())
+    McpResponse
+      .success(requestid, Json.obj("tools" -> toolsjson))
+      .asJson
+      .noSpaces
 
   def start(): Unit =
     // Register shutdown hook to make Ctrl-C / SIGTERM visible and debuggable
@@ -147,23 +177,9 @@ class McpClient():
       case Right(json) =>
         val cursor = json.hcursor
         val method = cursor.get[String]("method").getOrElse("")
+        val requestid = cursor.get[Option[String]]("id").getOrElse(None)
 
-        method match
-          case "initialize" =>
-            val init = initHandler.onInitialize()
-            println(init.noSpaces)
-
-          case "tools/list" | "tools/call" =>
-            withWebSocketOnce(input)
-
-          case other =>
-            println(
-              Json.obj(
-                "error" -> Json.obj(
-                  "message" -> Json.fromString(s"Unsupported method: $other")
-                )
-              ).noSpaces
-            )
+        _send_web_socket_once(input)
 
   private def handleMetaCommand(cmd: String): Unit =
     cmd match
@@ -192,18 +208,22 @@ class McpClient():
         )
 
       case ":initialize" =>
-        val init = initHandler.onInitialize()
-        println(init.spaces2)
+        val req =
+          Json.obj(
+            "jsonrpc" -> Json.fromString("2.0"),
+            "id" -> Json.fromString("meta-initialize"),
+            "method" -> Json.fromString("initialize")
+          )
+        _send_web_socket_once(req.noSpaces)
 
       case ":manifest" =>
-        val manifest = initHandler
-          .onInitialize()
-          .hcursor
-          .downField("capabilities")
-          .focus
-          .getOrElse(Json.Null)
-
-        println(manifest.spaces2)
+        val req =
+          Json.obj(
+            "jsonrpc" -> Json.fromString("2.0"),
+            "id" -> Json.fromString("meta-manifest"),
+            "method" -> Json.fromString("get_manifest")
+          )
+        _send_web_socket_once(req.noSpaces)
 
       case other =>
         System.err.println(s"[mcp-client] unknown meta command: $other (try :help)")

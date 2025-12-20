@@ -98,7 +98,7 @@ import io.circe.parser.parse
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 20, 2025
+ * @version Dec. 21, 2025
  * @author  ASAMI, Tomoharu
  */
 class HttpRagServer(
@@ -107,7 +107,8 @@ class HttpRagServer(
   port: Int,
   mode: ServerMode,
   knowledgeControl: org.simplemodeling.sie.config.KnowledgeStoresConfig,
-  systemStatus: Status
+  systemStatus: Status,
+  mcpmergemanifestintoinitialize: Boolean
 ):
 
   given EntityEncoder[IO, RagResult] = jsonEncoderOf
@@ -159,6 +160,12 @@ class HttpRagServer(
         description = "Explain a concept using the SimpleModeling knowledge base",
         required = List("name")
       )
+    )
+
+  private val _mcp_handler =
+    ProtocolHandler.Mcp.handlerWithTools(
+      defaultTools,
+      mcpmergemanifestintoinitialize
     )
 
   private def httpRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
@@ -265,7 +272,7 @@ class HttpRagServer(
   }
 
   private def websocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
-    new McpWebSocketServer(sieService).routes(wsb)
+    new McpWebSocketServer(sieService, mcpmergemanifestintoinitialize).routes(wsb)
 
   private def protocolWebSocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
@@ -353,7 +360,7 @@ class HttpRagServer(
       case WebSocketFrame.Text(text, _) =>
         val input = WsInput.Text(text)
         val output =
-          ProtocolHandler.Mcp.handler.handle(input, interactionContext)
+          _mcp_handler.handle(input, interactionContext)
         channel.send(WebSocketFrame.Text(output.message)).void
 
       case _ =>

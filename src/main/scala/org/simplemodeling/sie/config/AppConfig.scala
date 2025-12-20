@@ -86,11 +86,16 @@ case class AgentConfig(
   mode: AgentMode
 ) derives ConfigReader
 
+case class McpConfig(
+  mergeManifestIntoInitialize: Boolean = false
+) derives ConfigReader
+
 case class AppConfig(
   fuseki: FusekiConfig,
   chroma: ChromaConfig,
   server: ServerConfig,
   agent: Option[AgentConfig],
+  mcp: McpConfig = McpConfig(),
   // Operational control for external knowledge stores (GraphDB / VectorDB).
   knowledge: Option[KnowledgeStoresConfig]
 ) derives ConfigReader

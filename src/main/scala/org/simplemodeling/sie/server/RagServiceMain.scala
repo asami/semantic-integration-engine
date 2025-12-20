@@ -31,10 +31,11 @@ import org.simplemodeling.sie.status.*
  * - All external calls (Chroma, Fuseki, IndexInitializer) are treated as
  *   non-fatal for process startup. Failures are logged and the server
  *   continues in a degraded mode where possible.
- *
+ */
+/*
  * @since   Nov. 20, 2025
  *          Nov. 25, 2025
- * @version Dec. 14, 2025
+ * @version Dec. 21, 2025
  */
 /*
  * ============================================================
@@ -526,7 +527,8 @@ object RagServerMain extends IOApp.Simple:
         cfg.server.siePort,
         mode,
         knowledgeCfg,
-        status
+        status,
+        cfg.mcp.mergeManifestIntoInitialize
       ).start
 
     yield ()

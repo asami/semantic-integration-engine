@@ -24,17 +24,14 @@ import org.simplemodeling.sie.interaction.*
  *   4) Encodes via ProtocolEgress
  *
  * @since   Dec.  4, 2025
- * @version Dec. 20, 2025
+ * @version Dec. 21, 2025
  * @author  ASAMI, Tomoharu
  */
-class McpWebSocketServer(service: SieService):
+class McpWebSocketServer(
+  service: SieService,
+  mergemanifestintoinitialize: Boolean
+):
   import McpWebSocketServer._
-
-  private val _ingress = new McpJsonRpcIngress()
-  private val _adapter = new McpJsonRpcEgress(
-    servername = BuildInfo.name,
-    serverversion = BuildInfo.version
-  )
 
   private val _tools: List[OperationTool] =
     List(
@@ -48,6 +45,15 @@ class McpWebSocketServer(service: SieService):
         description = "Explain a concept using the SimpleModeling knowledge base",
         required = List("name")
       )
+    )
+
+  private val _ingress = new McpJsonRpcIngress()
+  private val _adapter =
+    new McpJsonRpcEgress(
+      servername = BuildInfo.name,
+      serverversion = BuildInfo.version,
+      tools = _tools,
+      mergemanifestintoinitialize = mergemanifestintoinitialize
     )
 
   def routes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
@@ -153,6 +159,9 @@ object McpWebSocketServer {
                 case "initialize" =>
                   Right(OperationRequest(request.id, OperationPayload.Initialize))
 
+                case "get_manifest" =>
+                  Right(OperationRequest(request.id, OperationPayload.ToolsList))
+
                 case "tools/list" =>
                   Right(OperationRequest(request.id, OperationPayload.ToolsList))
 
@@ -253,34 +262,19 @@ object McpWebSocketServer {
 
   final class McpJsonRpcEgress(
     servername: String,
-    serverversion: String
+    serverversion: String,
+    tools: List[OperationTool],
+    mergemanifestintoinitialize: Boolean
   ) extends ProtocolEgress[Json] {
 
     override def encode(result: OperationResult): Json =
       result.payload match
-        case OperationPayloadResult.Initialized(_, _, capabilities) =>
-          val body = Json.obj(
-            "serverName" -> Json.fromString(servername),
-            "serverVersion" -> Json.fromString(serverversion),
-            "capabilities" -> _encode_capabilities(capabilities)
-          )
+        case OperationPayloadResult.Initialized(_, _, _) =>
+          val body = _initialize_body()
           McpResponse(id = result.requestId, result = Some(body)).asJson
 
         case OperationPayloadResult.Tools(tools) =>
-          val toolsJson = Json.arr(
-            tools.map { tool =>
-              Json.obj(
-                "name" -> Json.fromString(tool.name),
-                "description" -> Json.fromString(tool.description),
-                "input_schema" -> Json.obj(
-                  "type" -> Json.fromString("object"),
-                  "required" -> Json.arr(tool.required.map(Json.fromString)*)
-                )
-              )
-            }*
-          )
-
-          val body = Json.obj("tools" -> toolsJson)
+          val body = Json.obj("tools" -> _tools_json(tools))
           McpResponse(id = result.requestId, result = Some(body)).asJson
 
         case OperationPayloadResult.Executed(opResult) =>
@@ -292,20 +286,31 @@ object McpWebSocketServer {
           val err = McpError(code, error.message)
           McpResponse(id = result.requestId, error = Some(err)).asJson
 
-    private def _encode_capabilities(capabilities: Map[String, Any]): Json =
-      Json.obj(
-        capabilities.toSeq.map { case (key, value) =>
-          val jsonvalue = value match
-            case s: String => Json.fromString(s)
-            case b: Boolean => Json.fromBoolean(b)
-            case n: Int => Json.fromInt(n)
-            case n: Long => Json.fromLong(n)
-            case n: Double => Json.fromDoubleOrNull(n)
-            case n: Float => Json.fromFloatOrNull(n)
-            case n: BigDecimal => Json.fromBigDecimal(n)
-            case n: BigInt => Json.fromBigInt(n)
-            case other => Json.fromString(other.toString)
-          key -> jsonvalue
+    private def _initialize_body(): Json =
+      val basefields =
+        List(
+          Some("capabilities" -> Json.obj())
+        )
+
+      val merged =
+        if mergemanifestintoinitialize then
+          basefields :+ Some("tools" -> _tools_json(tools))
+        else
+          basefields
+
+      Json.obj(merged.flatten*)
+
+    private def _tools_json(tools: List[OperationTool]): Json =
+      Json.arr(
+        tools.map { tool =>
+          Json.obj(
+            "name" -> Json.fromString(tool.name),
+            "description" -> Json.fromString(tool.description),
+            "input_schema" -> Json.obj(
+              "type" -> Json.fromString("object"),
+              "required" -> Json.arr(tool.required.map(Json.fromString)*)
+            )
+          )
         }*
       )
 
