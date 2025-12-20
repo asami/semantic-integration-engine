@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.0.5",
+    version := "0.1.0",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -114,7 +114,10 @@ dockerBuild := {
   val latest = "ghcr.io/asami/sie:latest"
   val verTag = s"ghcr.io/asami/sie:${version.value}"
 
-  val cmdBuild = s"docker build --no-cache -t $latest -t $verTag ."
+  val dockerfile = baseDirectory.value / "docker" / "Dockerfile"
+  val contextDir = baseDirectory.value
+  val cmdBuild =
+    s"docker build --no-cache -f ${dockerfile.getPath} -t $latest -t $verTag ${contextDir.getPath}"
   if (sys.process.Process(cmdBuild).! != 0)
     sys.error("Docker multi-tag build failed")
 
