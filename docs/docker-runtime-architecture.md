@@ -6,7 +6,7 @@
 The Semantic Integration Engine (SIE), when deployed via Docker, consists of
 the following core services:
 
-    - sie: Main SIE runtime (RAG API, explainConcept, MCP WebSocket server)
+    - sie: Main SIE runtime (REST API under /api, MCP WebSocket under /mcp)
     - sie-embedding: Provides Embedding API and VectorDB API
     - fuseki: RDF Triple Store (SPARQL endpoint)
 
@@ -106,6 +106,24 @@ Key point:
     ChromaDB container.
 
 
+## 6.1 External Endpoints Exposed by SIE
+
+The SIE container exposes two external-facing endpoints on the same port
+(default: 9050), separated by URL path to clearly distinguish protocols.
+
+    - REST API: `/api`
+        * Application- and system-facing HTTP APIs
+        * Used by non-agent clients and integrations
+
+    - MCP WebSocket: `/mcp`
+        * Agent-facing endpoint using strict JSON-RPC 2.0
+        * Used by MCP clients (VS Code, CLI, AI agents)
+
+The URL path acts as the protocol boundary. Internally, both endpoints
+share the same Interaction Contract (SieService) while remaining
+independent at the protocol level.
+
+
 ## 7. `/health` Behavior
 
 SIE checks:
@@ -137,6 +155,8 @@ With correct separation:
     - Encapsulate all vector store logic inside sie-embedding
     - Maintain stable Docker configuration
     - Enable future backend migrations seamlessly
+    - Expose REST and MCP on the same port with distinct paths (/api, /mcp)
+      to simplify deployment while keeping protocol boundaries explicit
 
 
 ## 10. Recommended File Placement

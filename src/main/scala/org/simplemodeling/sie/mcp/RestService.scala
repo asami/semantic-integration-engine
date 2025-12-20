@@ -18,7 +18,7 @@ import org.http4s.dsl.io.*
  *
  *   - local CLI-based MCP testing,
  *   - integration with non-ChatGPT AI systems,
- *   - development diagnostics of the SIE REST endpoint (/sie/query).
+ *   - development diagnostics of the SIE REST endpoint (/api/query).
  *
  * ChatGPT DOES NOT use this class. ChatGPT communicates with SIE
  * through the WebSocket-based MCP server, which is the production path.
@@ -28,7 +28,7 @@ import org.http4s.dsl.io.*
  *
  * @since   Nov. 25, 2025
  *          Nov. 26, 2025
- * @version Dec.  4, 2025
+ * @version Dec. 20, 2025
  * @author  ASAMI, Tomoharu
  */
 class RestService(client: Client[IO], sieQueryUri: Uri):

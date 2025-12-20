@@ -10,16 +10,21 @@ import org.simplemodeling.sie.service.*
 import com.comcast.ip4s.*
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
-import fs2.Stream
+import fs2.{Pipe, Stream}
+import fs2.concurrent.Channel
 import org.simplemodeling.sie.mcp.McpWebSocketServer
 import org.simplemodeling.sie.config.ServerMode
 import org.simplemodeling.sie.status.Status
-import org.simplemodeling.sie.interaction.SieService
+import org.simplemodeling.sie.interaction.*
+import org.simplemodeling.sie.interaction.ProtocolHandler
+import org.simplemodeling.sie.interaction.ProtocolHandler.WsInput
+import org.simplemodeling.sie.interaction.ProtocolHandler.WsOutput
 
 import cats.syntax.semigroupk.*
 
 import org.simplemodeling.sie.build.BuildInfo
 import io.circe.syntax.*
+import io.circe.parser.parse
 
 /*
  * ============================================================
@@ -93,7 +98,7 @@ import io.circe.syntax.*
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 13, 2025
+ * @version Dec. 20, 2025
  * @author  ASAMI, Tomoharu
  */
 class HttpRagServer(
@@ -108,6 +113,53 @@ class HttpRagServer(
   given EntityEncoder[IO, RagResult] = jsonEncoderOf
   given EntityEncoder[IO, Json] = jsonEncoderOf
   given EntityEncoder[IO, ConceptExplanation] = jsonEncoderOf
+
+  private val sieService = new SieService(service)
+  private val restIngress = new RestIngress()
+  private val restAdapter = new RestAdapter()
+  private val interactionContext = new InteractionContext {
+    override def execute(req: OperationRequest): OperationResult =
+      req.payload match
+        case OperationPayload.Initialize =>
+          OperationResult(
+            req.requestId,
+            OperationPayloadResult.Initialized(
+              serverName = "semantic-integration-engine",
+              serverVersion = BuildInfo.version,
+              capabilities = Map("tools" -> true)
+            )
+          )
+        case OperationPayload.ToolsList =>
+          OperationResult(
+            req.requestId,
+            OperationPayloadResult.Tools(defaultTools)
+          )
+        case OperationPayload.Call(op) =>
+          OperationResult(
+            req.requestId,
+            OperationPayloadResult.Executed(sieService.execute(op))
+          )
+
+    override def fail(err: ProtocolError): OperationResult =
+      OperationResult(
+        requestId = None,
+        payload = OperationPayloadResult.Failed(err)
+      )
+  }
+
+  private val defaultTools: List[OperationTool] =
+    List(
+      OperationTool(
+        name = "query",
+        description = "Semantic query using existing query implementation",
+        required = List("query")
+      ),
+      OperationTool(
+        name = "explainConcept",
+        description = "Explain a concept using the SimpleModeling knowledge base",
+        required = List("name")
+      )
+    )
 
   private def httpRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "status" / "schema" =>
@@ -195,45 +247,176 @@ class HttpRagServer(
         resp   <- Ok(result)
       yield resp
 
-    case req @ POST -> Root / "sie" / "query" =>
-      for
-        json  <- req.as[Json]
-        query <- IO(json.hcursor.get[String]("query").getOrElse(""))
-        result <- IO(service.run(query))
-                    .handleError { e =>
-                      println(s"[HttpRagServer] error in /sie/query: ${e.toString}")
-                      RagResult(
-                        concepts = Nil,
-                        passages = Nil,
-                        graph = org.simplemodeling.sie.service.GraphResult(Nil, Nil)
-                      )
-                    }
-        resp  <- Ok(result)
-      yield resp
 
-    case req @ POST -> Root / "sie" / "explain" =>
+    case req if req.method == Method.GET &&
+                 req.uri.path.renderString.startsWith("/api") =>
+      // Transport only: delegate all semantics to ProtocolHandler
+      handleProtocolHttp(req, Json.obj())
+
+    case req if req.method == Method.POST &&
+                 req.uri.path.renderString.startsWith("/api") =>
+      val jsonIO: IO[Json] =
+        req.attemptAs[Json].getOrElse(Json.obj())
+
       for {
-        json      <- req.as[Json]
-        uri       <- IO(json.hcursor.get[String]("uri").getOrElse(""))
-        localeStr <- IO(json.hcursor.get[String]("locale").getOrElse("en"))
-        locale = java.util.Locale.forLanguageTag(localeStr)
-        result <- service.explainConcept(uri, locale)
-                    .handleError { e =>
-                      println(s"[HttpRagServer] error in /sie/explain: ${e.toString}")
-                      ConceptExplanation(
-                        uri         = uri,
-                        label       = Some("Error"),
-                        description = Some(e.toString),
-                        graph       = GraphResult(Nil, Nil)
-                      )
-                    }
-        resp <- Ok(result)
+        json <- jsonIO
+        resp <- handleProtocolHttp(req, json)
       } yield resp
   }
 
   private def websocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
-    val sieService = new SieService(service)
     new McpWebSocketServer(sieService).routes(wsb)
+
+  private def protocolWebSocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
+    HttpRoutes.of[IO] {
+      case GET -> Root / "mcp" =>
+        for
+          channel <- Channel.unbounded[IO, WebSocketFrame]
+          socket  <- wsb.build(
+            send = channel.stream,
+            receive = handleProtocolMcp(channel)
+          )
+        yield socket
+
+      case GET -> Root / "chatgpt" =>
+        for
+          channel <- Channel.unbounded[IO, WebSocketFrame]
+          socket  <- wsb.build(
+            send = channel.stream,
+            receive = handleProtocolChatGpt(channel)
+          )
+        yield socket
+    }
+
+  private def handleRest(input: RestInput): IO[Response[IO]] =
+    restIngress.decode(input) match
+      case Left(err) =>
+        val result = OperationResult(
+          requestId = None,
+          payload = OperationPayloadResult.Failed(err)
+        )
+        val RestResponse(status, body) = restAdapter.encode(result)
+        IO.pure(Response(status = status).withEntity(body))
+
+      case Right(request) =>
+        request.payload match
+          case OperationPayload.Call(op) =>
+            val executed = sieService.execute(op)
+            val result = OperationResult(
+              requestId = request.requestId,
+              payload = OperationPayloadResult.Executed(executed)
+            )
+            val RestResponse(status, body) = restAdapter.encode(result)
+            IO.pure(Response(status = status).withEntity(body))
+
+          case other =>
+            val result = OperationResult(
+              requestId = request.requestId,
+              payload = OperationPayloadResult.Failed(
+                SimpleProtocolError(
+                  ProtocolErrorCode.MethodNotFound,
+                  s"unsupported request: $other"
+                )
+              )
+            )
+            val RestResponse(status, body) = restAdapter.encode(result)
+            IO.pure(Response(status = status).withEntity(body))
+
+  private def handleProtocolHttp(
+    req: Request[IO],
+    json: Json
+  ): IO[Response[IO]] =
+    val input = ProtocolHandler.Http.HttpInput(
+      method = req.method.name,
+      path = req.uri.path.renderString,
+      headers = req.headers.headers.map(h => h.name.toString -> h.value).toMap,
+      queryParams = req.uri.query.params,
+      body = json
+    )
+
+    val output =
+      ProtocolHandler.Http.handler.handle(input, interactionContext)
+
+    IO.pure(
+      Response(
+        status =
+          org.http4s.Status
+            .fromInt(output.status)
+            .getOrElse(org.http4s.Status.BadRequest)
+      ).withEntity(output.body)
+    )
+
+  private def handleProtocolMcp(
+    channel: Channel[IO, WebSocketFrame]
+  ): Pipe[IO, WebSocketFrame, Unit] =
+    _.evalMap {
+      case WebSocketFrame.Text(text, _) =>
+        val input = WsInput.Text(text)
+        val output =
+          ProtocolHandler.Mcp.handler.handle(input, interactionContext)
+        channel.send(WebSocketFrame.Text(output.message)).void
+
+      case _ =>
+        val output = WsOutput("unsupported frame")
+        channel.send(WebSocketFrame.Text(output.message)).void
+    }
+
+  private def handleProtocolChatGpt(
+    channel: Channel[IO, WebSocketFrame]
+  ): Pipe[IO, WebSocketFrame, Unit] =
+    _.evalMap {
+      case WebSocketFrame.Text(text, _) =>
+        val payload = parseChatGptInput(text)
+        val input = WsInput.ChatGpt(payload)
+        val output =
+          ProtocolHandler.ChatGpt.handler.handle(input, interactionContext)
+        channel.send(WebSocketFrame.Text(output.message)).void
+
+      case _ =>
+        val output = WsOutput("unsupported frame")
+        channel.send(WebSocketFrame.Text(output.message)).void
+    }
+
+  private def parseChatGptInput(
+    text: String
+  ): ProtocolHandler.ChatGpt.ChatGptInput =
+    parse(text) match
+      case Left(_) =>
+        ProtocolHandler.ChatGpt.ChatGptInput.Message(
+          ProtocolHandler.ChatGpt.ChatGptMessage(
+            role = "user",
+            content = text
+          )
+        )
+      case Right(json) =>
+        val cursor = json.hcursor
+        val name = cursor.get[String]("name").getOrElse("")
+        val arguments =
+          cursor
+            .downField("arguments")
+            .focus
+            .flatMap(_.asObject)
+            .map { obj =>
+              obj.toMap.view.mapValues { value =>
+                value.asString.getOrElse(value.noSpaces)
+              }.toMap
+            }
+            .getOrElse(Map.empty)
+
+        if name.nonEmpty then
+          ProtocolHandler.ChatGpt.ChatGptInput.ToolCall(
+            ProtocolHandler.ChatGpt.ChatGptToolCall(
+              name = name,
+              arguments = arguments
+            )
+          )
+        else
+          ProtocolHandler.ChatGpt.ChatGptInput.Message(
+            ProtocolHandler.ChatGpt.ChatGptMessage(
+              role = "user",
+              content = text
+            )
+          )
 
   def start: IO[Nothing] =
     EmberServerBuilder
@@ -241,7 +424,7 @@ class HttpRagServer(
       .withHost(Host.fromString(host).getOrElse(host"0.0.0.0"))
       .withPort(Port.fromInt(port).getOrElse(port"8080"))
       .withHttpWebSocketApp { wsb =>
-        (httpRoutes <+> websocketRoutes(wsb)).orNotFound
+        (httpRoutes <+> protocolWebSocketRoutes(wsb) <+> websocketRoutes(wsb)).orNotFound
       }
       .build
       .useForever

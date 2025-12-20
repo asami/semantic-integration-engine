@@ -10,7 +10,7 @@ interaction vocabulary, and execution logic.
 
 ---------------------------------------------------------------------
 
-## Component Interaction Contract (tentative)
+## Component Interaction Contract (authoritative)
 
 The Component Interaction Contract defines the complete set of
 interactions that a component accepts from its external environment.
@@ -27,6 +27,21 @@ The contract is intentionally decomposed into two symmetric sub-languages:
     Component Interaction Contract
       ├─ Component Operation Language
       └─ Component Reception Language
+
+---------------------------------------------------------------------
+
+## Interaction Architecture
+
+SIE adopts an Operation-Language-centered interaction architecture.
+All external requests are normalized into Operation Requests and
+executed exclusively by the Interaction Contract.
+
+Execution flow:
+
+    ProtocolIngress → SieService → ProtocolAdapter
+
+The Interaction Contract is the stable internal boundary between
+protocols and business execution.
 
 ---------------------------------------------------------------------
 
@@ -48,7 +63,7 @@ authorization, policy checks).
 
 This interaction path is used by:
 
-- MCP (ChatGPT / VS Code)
+- MCP (JSON-RPC)
 - REST APIs
 - CLI-based clients
 
@@ -91,3 +106,64 @@ Once CNCF APIs are stabilized, the following mappings are expected:
 This document intentionally focuses on conceptual structure rather than
 concrete implementation details, so that it can remain stable as SIE
 and CNCF evolve.
+
+---------------------------------------------------------------------
+
+## Component Interaction Contract (SieService)
+
+SieService is the single Component Interaction Contract for SIE.
+It is the only executor of the Operation Language and the only entry
+point allowed to dispatch operations.
+
+Protocol layers must not:
+
+- dispatch operations directly
+- contain business execution logic
+- bypass SieService
+
+---------------------------------------------------------------------
+
+## Protocol Boundaries
+
+Protocol-specific logic is isolated at the boundaries:
+
+ProtocolIngress (input boundary)
+- decodes external messages
+- validates protocol fields
+- normalizes into Operation Requests
+
+ProtocolAdapter (output boundary)
+- encodes Operation Results
+- formats protocol-specific responses
+
+Only the boundaries know protocol formats. The Interaction Contract
+remains protocol-agnostic.
+
+Multiple ProtocolIngress implementations may coexist.
+For example, MCP (JSON-RPC), REST, CLI, and ChatGPT integrations are each
+handled by their own ProtocolIngress, all mapping external interactions
+onto the same Operation Language without sharing protocol semantics.
+
+---------------------------------------------------------------------
+
+## ChatGPT Integration (Conceptual)
+
+ChatGPT integration is treated as a separate protocol boundary.
+It does not reuse the MCP (JSON-RPC) protocol and is not exposed through
+the `/mcp` endpoint.
+
+Instead, ChatGPT inputs (such as tool calls or conversational messages)
+are normalized by a dedicated ProtocolIngress and mapped onto the same
+Operation Language executed by SieService.
+
+---------------------------------------------------------------------
+
+## Relationship to McpCore
+
+McpCore is not an execution path for operations.
+Execution always flows through:
+
+    ProtocolIngress → SieService → ProtocolAdapter
+
+If McpCore is retained, it is limited to lifecycle or session
+concerns and does not perform operation execution.

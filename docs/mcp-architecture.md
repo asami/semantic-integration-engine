@@ -1,12 +1,11 @@
 # MCP Architecture (Semantic Integration Engine)
 
-This document describes the architecture and design decisions
-of the MCP (Model Context Protocol) support in the
+This document defines the MCP (Model Context Protocol) design in the
 Semantic Integration Engine (SIE).
 
-It focuses on protocol-level responsibilities, adapter separation,
-and stable semantic APIs exposed to MCP clients such as
-ChatGPT and VS Code.
+It specifies MCP as a strict JSON-RPC 2.0 protocol exposed via a
+WebSocket endpoint, and clarifies its relationship to the Operation
+Language and Interaction Contract.
 
 ----------------------------------------------------------------------
 
@@ -14,234 +13,79 @@ ChatGPT and VS Code.
 
 Goals:
 
-- Support both:
-    - Standard MCP (JSON-RPC 2.0 over stdio)
-    - ChatGPT-specific MCP (WebSocket-based protocol)
-- Provide a single, stable semantic API for tools
-- Isolate protocol and transport differences using adapters
-- Keep MCP Core independent from:
-    - JSON-RPC
-    - WebSocket
-    - stdin / stdout
-    - client-specific behavior
+- Provide a strict JSON-RPC 2.0 MCP endpoint over WebSocket
+- Expose stable, semantic tool APIs derived from the Operation Language
+- Isolate protocol encoding/decoding at protocol boundaries
+- Keep SieService as the only execution path for operations
 
 Non-Goals:
 
-- Implementing editor-specific UX behavior
-- Exposing internal technologies (RDF, SPARQL, vector DB) as MCP APIs
-- Supporting ChatGPT protocol over stdin
+- Supporting ChatGPT-specific or shorthand protocols on /mcp
+- Merging REST and MCP endpoints
+- Exposing internal data stores as MCP tools
 
 ----------------------------------------------------------------------
 
-2. Overall MCP Architecture
+2. MCP Endpoint Definition
 
-The MCP implementation in SIE is structured as follows:
+- Endpoint: WebSocket `/mcp`
+- Protocol: JSON-RPC 2.0 (strict)
+- Audience: MCP client developers and protocol integrators
 
-    +----------------------+
-    |      MCP Core        |
-    |  (Semantic Logic)    |
-    +----------------------+
-         ^            ^
-         |            |
-    +---------+   +----------------+
-    | JSON-RPC |   | ChatGPT MCP   |
-    | Adapter  |   | Adapter       |
-    | (stdio)  |   | (WebSocket)   |
-    +---------+   +----------------+
-
-- MCP Core defines semantic behavior and tool execution
-- Adapters translate protocol-specific messages into Core requests
-- Adapters are responsible for transport, framing, and IDs
+The WebSocket is a transport only. All messages are JSON-RPC 2.0
+requests and responses.
 
 ----------------------------------------------------------------------
 
-3. MCP Core API
+3. MCP Request / Response Flow
 
-The MCP Core exposes the following minimal operations:
+The execution flow is fixed and protocol boundaries are explicit:
 
-- initialize
-- toolsList
-- callTool
-- resourcesList
+    JSON-RPC request
+      → McpJsonRpcIngress (ProtocolIngress)
+      → SieService (Interaction Contract)
+      → McpJsonRpcAdapter (ProtocolAdapter)
+      → JSON-RPC response
 
-Core request model (conceptual):
-
-    McpRequest.Initialize
-    McpRequest.Initialized
-    McpRequest.ToolsList
-    McpRequest.ToolsCall
-    McpRequest.ResourcesList
-
-The Core does not know:
-- jsonrpc fields
-- request IDs
-- notification semantics
-- transport details
+The MCP endpoint never bypasses the Interaction Contract.
 
 ----------------------------------------------------------------------
 
-4. Protocol Adapters
+4. Tool Semantics
 
-4.1 JSON-RPC Adapter (Standard MCP)
+The MCP tools are projections of the Operation Language:
 
-- Transport: stdin / stdout
-- Protocol: JSON-RPC 2.0
-- Used by: VS Code MCP client, CLI tools
+- tools/list: lists available operations as stable tool definitions
+- tools/call: executes a specific operation by tool name
 
-Responsibilities:
-
-- Validate jsonrpc == "2.0"
-- Distinguish request vs notification
-- Preserve request id
-- Map JSON-RPC errors to Core errors
-- Encode Core responses as JSON-RPC responses
-
-This adapter exclusively handles standard MCP clients.
+Tool definitions are derived from operation metadata and are treated
+as stable semantic APIs.
 
 ----------------------------------------------------------------------
 
-4.2 ChatGPT MCP Adapter
+5. Separation from REST and ChatGPT
 
-- Transport: WebSocket
-- Protocol: ChatGPT MCP message format
-- Used by: ChatGPT
-
-Characteristics:
-
-- JSON-RPC-like structure (method, params, id)
-- No jsonrpc field
-- MCP lifecycle messages (initialize, initialized)
-
-Responsibilities:
-
-- Decode ChatGPT MCP messages
-- Map messages to MCP Core requests
-- Encode Core responses back to ChatGPT MCP format
-- Manage WebSocket connection lifecycle
-
-ChatGPT protocol support is strictly isolated to this adapter.
+- REST APIs are exposed separately under `/api`
+- MCP is strict JSON-RPC 2.0 on `/mcp`
+- ChatGPT integration is a separate route and not supported on `/mcp`
 
 ----------------------------------------------------------------------
 
-5. Tool and Content Schema
+6. Error Model
 
-5.1 Tool Definition
+Protocol errors are mapped to JSON-RPC error codes:
 
-Tools are exposed as stable semantic APIs.
+- invalid_request  → -32600
+- method_not_found → -32601
+- invalid_params   → -32602
+- internal_error   → -32603
 
-    name: string
-    description: string
-    inputSchema: JSON Schema
-
-Example tool names:
-
-    explainConcept
-    queryGraph
-    listDocuments
-    resolveConcept
-
-Tools represent semantic intent, not implementation details.
+Protocol-specific formatting is handled only by McpJsonRpcAdapter.
 
 ----------------------------------------------------------------------
 
-5.2 Tool Result Content
+7. Stability Notes
 
-Tool execution results are returned as structured content:
-
-    items: List[McpItem]
-
-Standard item kinds:
-
-- concept
-- passage
-- graph
-- score
-
-Example (concept + passage):
-
-    {
-      "items": [
-        {
-          "kind": "concept",
-          "id": "domain-model",
-          "title": "Domain Model",
-          "summary": "Core domain concepts and relationships"
-        },
-        {
-          "kind": "passage",
-          "documentId": "sm-doc-001",
-          "text": "A domain model captures...",
-          "score": 0.92
-        }
-      ]
-    }
-
-----------------------------------------------------------------------
-
-6. Session, Trace, and Event Model
-
-SIE uses three identifiers to support observability and analysis:
-
-- sessionId : connection-level identifier
-- traceId   : request-level identifier
-- eventId   : log / analysis / domain event identifier
-
-Relationships:
-
-    sessionId
-        └── traceId
-                └── eventId*
-
-sessionId:
-- Generated by adapter
-- Stable for the lifetime of a connection
-
-traceId:
-- Generated per request
-- Scoped within a session
-
-eventId:
-- Generated by Core
-- Shared across operational and analytical logs
-
-----------------------------------------------------------------------
-
-7. Error Model
-
-MCP Core uses semantic error codes independent of protocol:
-
-    invalid_request
-    method_not_found
-    invalid_params
-    tool_execution_failed
-    internal_error
-
-Errors are returned as values, not exceptions.
-
-Protocol-specific error representations are handled by adapters.
-
-All errors generate an eventId for correlation.
-
-----------------------------------------------------------------------
-
-8. Tool Naming Conventions
-
-Tool names follow these rules:
-
-- camelCase
-- verb + object
-- semantic intent only
-- treated as stable APIs
-
-Examples:
-
-    explainConcept
-    queryGraph
-    analyzeModel
-    listDocuments
-
-Transport or implementation details are excluded from tool names.
-
-----------------------------------------------------------------------
-
-End of document
+Tool names are treated as stable semantic APIs.
+Changes to tool names or required parameters must be treated as
+breaking changes for MCP clients.

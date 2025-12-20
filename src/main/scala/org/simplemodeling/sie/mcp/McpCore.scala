@@ -1,7 +1,6 @@
 package org.simplemodeling.sie.mcp.core
 
 import io.circe.{Json, JsonObject}
-import org.simplemodeling.sie.interaction.{ExplainConcept, Query, SieService}
 
 /**
  * MCP Core
@@ -15,7 +14,7 @@ import org.simplemodeling.sie.interaction.{ExplainConcept, Query, SieService}
  */
 /*
  * @since   Dec. 19, 2025
- * @version Dec. 19, 2025
+ * @version Dec. 20, 2025
  * @author  ASAMI, Tomoharu
  */
 
@@ -208,9 +207,9 @@ trait McpCore {
  * ============================================================
  */
 
+@deprecated("MCP execution is handled by ProtocolIngress/ProtocolEgress", "2025-12-20")
 final class DefaultMcpCore(
-  tools: List[McpTool],
-  sieService: SieService
+  tools: List[McpTool]
 ) extends McpCore {
 
   private val builtinTools: List[McpTool] =
@@ -245,11 +244,6 @@ final class DefaultMcpCore(
         .filterNot(tool => existingNames.contains(tool.name))
     normalized ++ builtin
 
-  private def toOpaqueItem(result: Any): JsonItem =
-    JsonItem(
-      kind = "result",
-      value = Json.fromString(result.toString)
-    )
 
   override def initialize(
     req: McpRequest.Initialize
@@ -287,51 +281,12 @@ final class DefaultMcpCore(
       case None =>
         ()
 
-    req.name match
-      case "query" =>
-        val queryText =
-          req.arguments("query")
-            .flatMap(_.asString)
-            .getOrElse("")
-
-        val limit =
-          req.arguments("limit")
-            .flatMap(_.asNumber)
-            .flatMap(_.toInt)
-
-        val result = sieService.execute(Query(query = queryText, limit = limit))
-        McpResult.Success(
-          McpResponse.ToolResult(
-            McpContent(List(toOpaqueItem(result)))
-          )
-        )
-
-      case "explainConcept" =>
-        val idJson = req.arguments("id")
-        val id =
-          idJson
-            .flatMap(_.asString)
-            .orElse(idJson.map(_.noSpaces))
-            .getOrElse("unknown")
-
-        val result = sieService.execute(ExplainConcept(name = id))
-        McpResult.Success(
-          McpResponse.ToolResult(
-            McpContent(
-              items = List(
-                toOpaqueItem(result)
-              )
-            )
-          )
-        )
-
-      case other =>
-        McpResult.Failure(
-          SimpleMcpError(
-            McpErrorCode.MethodNotFound,
-            s"Tool not found: $other"
-          )
-        )
+    McpResult.Failure(
+      SimpleMcpError(
+        McpErrorCode.MethodNotFound,
+        "McpCore is deprecated; use ProtocolIngress/ProtocolEgress with SieService."
+      )
+    )
 
   override def resourcesList()(
     using ctx: McpContext

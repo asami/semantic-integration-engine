@@ -1,6 +1,7 @@
 package org.simplemodeling.sie.interaction
 
 import org.simplemodeling.sie.service.RagService
+import io.circe.syntax.*
 
 /*
  * @since   Dec. 20, 2025
@@ -31,18 +32,13 @@ final class QueryOperationCall(
 ) extends SieOperationCall[Query, QueryResult] {
 
   override def execute(op: Query): QueryResult = {
-    // TODO:
-    // Delegate to RagService query APIs and compose the result.
-    // This is the single execution point for Query operation.
-    //
-    // Example (to be wired later):
-    // val concepts = ragService.queryConcepts(op.query, op.limit)
-    // val passages = ragService.queryPassages(op.query, op.limit)
-    // val graph    = ragService.queryGraph(op.query)
-    //
-    // QueryResult(concepts, passages, graph)
+    val rag = ragService.run(op.query)
 
-    QueryResult()
+    QueryResult(
+      concepts = rag.concepts.map(_.label),
+      passages = rag.passages.map(_.text),
+      graph    = rag.graph.asJson.noSpaces
+    )
   }
 }
 

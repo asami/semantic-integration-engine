@@ -1,51 +1,54 @@
 package org.simplemodeling.sie.mcp
 
 import cats.effect.*
-import cats.syntax.all.*
-import fs2.{Pipe, Stream}
+import fs2.Pipe
 import fs2.concurrent.Channel
-import io.circe.parser.*
+import io.circe.{Json, JsonObject}
+import io.circe.parser.parse
 import io.circe.syntax.*
-import io.circe.Json
-import org.http4s.client.dsl.io.*
-import org.http4s.ember.client.EmberClientBuilder
 import org.http4s.HttpRoutes
 import org.http4s.dsl.io.*
 import org.http4s.server.websocket.WebSocketBuilder2
 import org.http4s.websocket.WebSocketFrame
 
-import org.simplemodeling.sie.interaction.{ExplainConcept, Query, SieService}
 import org.simplemodeling.sie.BuildInfo
-
-import cats.effect.unsafe.implicits.global
+import org.simplemodeling.sie.interaction.*
 
 /*
- * Minimal WebSocket MCP server for ChatGPT integration.
- *
- * ChatGPT connects via WebSocket and sends JSON-RPC messages:
- *
- *   {
- *     "jsonrpc": "2.0",
- *     "id": "...",
- *     "method": "tools.sie.query",
- *     "params": { "query": "SimpleModeling" }
- *   }
+ * Minimal WebSocket MCP server for JSON-RPC 2.0.
  *
  * This server:
- *   1) Receives JSON
- *   2) Dispatches "tools.sie.query" to SieService
- *   3) Returns result as JSON-RPC response
- *
- * NOTE:
- *  - This is a minimal skeleton
- *  - Production version should validate JSON-RPC fully
- *  - Should also add capabilities/initialize responses if needed
+ *   1) Receives JSON-RPC
+ *   2) Decodes via ProtocolIngress
+ *   3) Executes via SieService
+ *   4) Encodes via ProtocolEgress
  *
  * @since   Dec.  4, 2025
- * @version Dec.  5, 2025
+ * @version Dec. 20, 2025
  * @author  ASAMI, Tomoharu
  */
 class McpWebSocketServer(service: SieService):
+  import McpWebSocketServer._
+
+  private val _ingress = new McpJsonRpcIngress()
+  private val _adapter = new McpJsonRpcEgress(
+    servername = BuildInfo.name,
+    serverversion = BuildInfo.version
+  )
+
+  private val _tools: List[OperationTool] =
+    List(
+      OperationTool(
+        name = "query",
+        description = "Semantic query using existing query implementation",
+        required = List("query")
+      ),
+      OperationTool(
+        name = "explainConcept",
+        description = "Explain a concept using the SimpleModeling knowledge base",
+        required = List("name")
+      )
+    )
 
   def routes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
     HttpRoutes.of[IO] {
@@ -54,242 +57,282 @@ class McpWebSocketServer(service: SieService):
           channel <- Channel.unbounded[IO, WebSocketFrame]
           socket  <- wsb.build(
             send = channel.stream,
-            receive = handleIncoming(channel)
+            receive = _handle_incoming(channel)
           )
         yield socket
     }
 
-  private def handleIncoming(
+  private def _handle_incoming(
       channel: Channel[IO, WebSocketFrame]
   ): Pipe[IO, WebSocketFrame, Unit] =
     _.evalMap {
       case WebSocketFrame.Text(text, _) =>
         for
-          response <- processJsonRpc(text)
+          response <- _process_json_rpc(text)
           _        <- channel.send(WebSocketFrame.Text(response))
         yield ()
 
       case _ =>
         channel.send(
-          WebSocketFrame.Text("""{"error":"unsupported frame"}""")
+          WebSocketFrame.Text(_adapter.encode(_error_result("unsupported frame")).noSpaces)
         ).void
     }
 
-  private def loadResourceJson(path: String): io.circe.Json =
-    try
-      val raw = scala.io.Source.fromResource(path)("UTF-8").mkString
-      parse(raw).getOrElse(io.circe.Json.obj())
-    catch
-      case _: Throwable =>
-        io.circe.Json.obj(
-          "error" -> io.circe.Json.fromString(s"resource not found: $path")
-        )
+  private def _process_json_rpc(msg: String): IO[String] =
+    _ingress.decode(msg) match
+      case Left(err) =>
+        IO.pure(_adapter.encode(_error_result(err)).noSpaces)
 
-  // ----------------------------------------
-  // Shared placeholder substitution
-  // ----------------------------------------
-  private def applyPlaceholders(json: Json): Json =
-    json.hcursor
-      .withFocus(_.mapObject(obj =>
-        obj
-          .add("version",
-            obj("version") match
-              case Some(v) if v.asString.exists(_.contains("__VERSION__")) =>
-                Json.fromString(BuildInfo.version)
-              case other => other.getOrElse(io.circe.Json.Null)
-          )
-      ))
-      .top
-      .getOrElse(json)
+      case Right(request) =>
+        val result = request.payload match
+          case OperationPayload.Initialize =>
+            OperationResult(
+              request.requestId,
+              OperationPayloadResult.Initialized(
+                serverName = BuildInfo.name,
+                serverVersion = BuildInfo.version,
+                capabilities = Map("tools" -> true)
+              )
+            )
 
-  private val defaultMetadata: Json = io.circe.Json.obj(
-    "author"   -> Json.fromString("SimpleModeling Team"),
-    "homepage" -> Json.fromString("https://www.simplemodeling.org")
-  )
+          case OperationPayload.ToolsList =>
+            OperationResult(
+              request.requestId,
+              OperationPayloadResult.Tools(_tools)
+            )
 
-  private def buildInfoMetadata: Json =
-    io.circe.Json.obj(
-      "author"   -> Json.fromString(BuildInfo.author),
-      "homepage" -> Json.fromString(BuildInfo.homepage)
+          case OperationPayload.Call(op) =>
+            val executed = service.execute(op)
+            OperationResult(
+              request.requestId,
+              OperationPayloadResult.Executed(executed)
+            )
+
+        IO.pure(_adapter.encode(result).noSpaces)
+
+  private def _error_result(message: String): OperationResult =
+    OperationResult(
+      requestId = None,
+      payload = OperationPayloadResult.Failed(
+        SimpleProtocolError(ProtocolErrorCode.InvalidRequest, message)
+      )
     )
 
-  private def loadMetadataFromWeb(): IO[Option[Json]] =
-    EmberClientBuilder.default[IO].build.use { client =>
-      val base = if BuildInfo.homepage.endsWith("/") then BuildInfo.homepage else BuildInfo.homepage + "/"
-      val url = base + "metadata.json"
-      client.get(url) { resp =>
-        if resp.status.isSuccess then
-          resp.as[String].map(s => parse(s).toOption)
-        else IO.pure(None)
-      }
-    }.handleError(_ => None)
+  private def _error_result(error: ProtocolError): OperationResult =
+    OperationResult(
+      requestId = None,
+      payload = OperationPayloadResult.Failed(error)
+    )
 
-  private def loadLocalMetadata(): Option[Json] =
-    val json = loadResourceJson("mcp/metadata.json")
-    if json.isNull then None else Some(json)
-
-  private def resolveMetadata(): IO[Json] =
-    for
-      remote <- loadMetadataFromWeb()
-      local   = loadLocalMetadata()
-    yield remote
-      .orElse(local)
-      .orElse(Some(buildInfoMetadata))
-      .getOrElse(defaultMetadata)
-
-  // ----------------------------------------
-  // Metadata caching (avoid unsafeRunSync in handler)
-  // ----------------------------------------
-  private lazy val cachedMetadata: Json =
-    defaultMetadata
-
-  private def loadPatchedJson(path: String): io.circe.Json =
-    val base = loadResourceJson(path)
-    val baseWithPlaceholders = applyPlaceholders(base)
-
-    // Patch "server" → version & name
-    val patchedServer =
-      baseWithPlaceholders.hcursor
-        .downField("server")
-        .withFocus(_.mapObject(obj =>
-          obj
-            .add("version", io.circe.Json.fromString(BuildInfo.version))
-            .add("name", io.circe.Json.fromString(BuildInfo.name))
-        ))
-        .top
-        .getOrElse(baseWithPlaceholders)
-
-    // Patch top-level fields → name, protocolVersion
-    val patchedTop =
-      patchedServer.hcursor
-        .withFocus(_.mapObject(obj =>
-          obj
-            .add("name", io.circe.Json.fromString(BuildInfo.name))
-            .add("protocolVersion", io.circe.Json.fromString("1.0"))
-        ))
-        .top
-        .getOrElse(patchedServer)
-
-    // ----------------------------------------
-    // Patch metadata (Web → local → BuildInfo → default)
-    // Always create metadata field even if missing
-    // ----------------------------------------
-    val meta = cachedMetadata
-
-    val authorValue =
-      meta.hcursor.downField("author").get[String]("name")
-        .orElse(meta.hcursor.get[String]("author"))
-        .getOrElse("Unknown")
-
-    val homepageValue =
-      meta.hcursor.get[String]("url")
-        .orElse(meta.hcursor.get[String]("homepage"))
-        .getOrElse("https://example.com/")
-
-    // Ensure metadata object exists
-    val ensuredMetadata =
-      patchedTop.hcursor.downField("metadata").success match
-        case Some(_) => patchedTop
-        case None =>
-          patchedTop.mapObject(obj => obj.add("metadata", io.circe.Json.obj()))
-
-    val patchedMeta =
-      ensuredMetadata.hcursor
-        .downField("metadata")
-        .withFocus(_.mapObject(obj =>
-          obj
-            .add("author", authorValue.asJson)
-            .add("homepage", homepageValue.asJson)
-        ))
-        .top
-        .getOrElse(ensuredMetadata)
-
-    patchedMeta
-
-  // ----------------------------------------
-  private def processJsonRpc(msg: String): IO[String] =
-    parse(msg) match
-      case Left(err) =>
-        IO.pure(
-          io.circe.Json.obj(
-            "type" -> io.circe.Json.fromString("error"),
-            "error" -> io.circe.Json.obj(
-              "message" -> io.circe.Json.fromString(s"invalid json: ${err.getMessage}")
-            )
-          ).noSpaces
+object McpWebSocketServer {
+  final class McpJsonRpcIngress extends ProtocolIngress[String] {
+    override def decode(input: String): Either[ProtocolError, OperationRequest] =
+      parse(input)
+        .left.map(err =>
+          SimpleProtocolError(
+            ProtocolErrorCode.InvalidRequest,
+            s"invalid json: ${err.getMessage}"
+          )
         )
-
-      case Right(json) =>
-        val cursor = json.hcursor
-        val messageType = cursor.get[String]("type").getOrElse("")
-
-        messageType match
-          case "initialize" =>
-            IO.pure(
-              loadPatchedJson("initialization.json").noSpaces
+        .flatMap { json =>
+          json.as[McpRequest].left.map(err =>
+            SimpleProtocolError(
+              ProtocolErrorCode.InvalidRequest,
+              s"invalid request: ${err.getMessage}"
             )
-
-          case "get_manifest" =>
-            IO.pure(
-              io.circe.Json.obj(
-                "type" -> io.circe.Json.fromString("manifest"),
-                "manifest" -> loadPatchedJson("mcp.json")
-              ).noSpaces
-            )
-
-          case "call" =>
-            val toolName = cursor.downField("tool").get[String]("name").getOrElse("")
-            val args     = cursor.downField("tool").downField("arguments")
-
-            toolName match
-              case "tools.sie.query" =>
-                val query = args.get[String]("query").getOrElse("")
-                val result = service.execute(Query(query = query))
-                IO.pure(
-                  io.circe.Json.obj(
-                    "type" -> io.circe.Json.fromString("toolResult"),
-                    "tool" -> io.circe.Json.fromString("tools.sie.query"),
-                    "result" -> io.circe.Json.fromString(result.toString)
-                  ).noSpaces
+          ).flatMap { request =>
+            if request.jsonrpc != "2.0" then
+              Left(
+                SimpleProtocolError(
+                  ProtocolErrorCode.InvalidRequest,
+                  s"unsupported jsonrpc version: ${request.jsonrpc}"
                 )
+              )
+            else
+              request.method match
+                case "initialize" =>
+                  Right(OperationRequest(request.id, OperationPayload.Initialize))
 
-              case "tools.sie.explainConcept" =>
-                val uri        = args.get[String]("uri").getOrElse("")
-                val result = service.execute(ExplainConcept(name = uri))
-                IO.pure(
-                  io.circe.Json.obj(
-                    "type"   -> io.circe.Json.fromString("toolResult"),
-                    "tool"   -> io.circe.Json.fromString("tools.sie.explainConcept"),
-                    "result" -> io.circe.Json.fromString(result.toString)
-                  ).noSpaces
-                )
+                case "tools/list" =>
+                  Right(OperationRequest(request.id, OperationPayload.ToolsList))
 
-              case "tools.sie.getNeighbors" =>
-                IO.pure(
-                  io.circe.Json.obj(
-                    "type" -> io.circe.Json.fromString("error"),
-                    "error" -> io.circe.Json.obj(
-                      "message" -> io.circe.Json.fromString("tool not supported: tools.sie.getNeighbors")
+                case "tools/call" =>
+                  _decode_tool_call(request)
+
+                case other =>
+                  Left(
+                    SimpleProtocolError(
+                      ProtocolErrorCode.MethodNotFound,
+                      s"unknown method: $other"
                     )
-                  ).noSpaces
-                )
+                  )
+          }
+        }
 
-              case other =>
-                IO.pure(
-                  io.circe.Json.obj(
-                    "type" -> io.circe.Json.fromString("error"),
-                    "error" -> io.circe.Json.obj(
-                      "message" -> io.circe.Json.fromString(s"unknown tool: $other")
-                    )
-                  ).noSpaces
-                )
-
-          case other =>
-            IO.pure(
-              io.circe.Json.obj(
-                "type" -> io.circe.Json.fromString("error"),
-                "error" -> io.circe.Json.obj(
-                  "message" -> io.circe.Json.fromString(s"unknown message type: $other")
-                )
-              ).noSpaces
+    private def _decode_tool_call(
+      request: McpRequest
+    ): Either[ProtocolError, OperationRequest] =
+      request.params match
+        case None =>
+          Left(
+            SimpleProtocolError(
+              ProtocolErrorCode.InvalidParams,
+              "missing params"
             )
+          )
+        case Some(params) =>
+          val cursor = params.hcursor
+          val name = cursor.get[String]("name").getOrElse("")
+          if name.isEmpty then
+            Left(
+              SimpleProtocolError(
+                ProtocolErrorCode.InvalidParams,
+                "missing tool name"
+              )
+            )
+          else
+            val args = cursor.downField("arguments").focus
+              .flatMap(_.asObject)
+              .getOrElse(JsonObject.empty)
+            _decode_tool_arguments(request.id, name, args)
+
+    private def _decode_tool_arguments(
+      requestid: Option[String],
+      name: String,
+      args: JsonObject
+    ): Either[ProtocolError, OperationRequest] =
+      name match
+        case "query" =>
+          val query = args("query").flatMap(_.asString).getOrElse("")
+          if query.isEmpty then
+            Left(
+              SimpleProtocolError(
+                ProtocolErrorCode.InvalidParams,
+                "missing query"
+              )
+            )
+          else
+            val limit = args("limit").flatMap(_.asNumber).flatMap(_.toInt)
+            Right(
+              OperationRequest(
+                requestid,
+                OperationPayload.Call(Query(query = query, limit = limit))
+              )
+            )
+
+        case "explainConcept" =>
+          val namevalue =
+            args("name").flatMap(_.asString)
+              .orElse(args("id").flatMap(_.asString))
+              .orElse(args("uri").flatMap(_.asString))
+              .getOrElse("")
+
+          if namevalue.isEmpty then
+            Left(
+              SimpleProtocolError(
+                ProtocolErrorCode.InvalidParams,
+                "missing concept name"
+              )
+            )
+          else
+            Right(
+              OperationRequest(
+                requestid,
+                OperationPayload.Call(ExplainConcept(name = namevalue))
+              )
+            )
+
+        case other =>
+          Left(
+            SimpleProtocolError(
+              ProtocolErrorCode.MethodNotFound,
+              s"unknown tool: $other"
+            )
+          )
+  }
+
+  final class McpJsonRpcEgress(
+    servername: String,
+    serverversion: String
+  ) extends ProtocolEgress[Json] {
+
+    override def encode(result: OperationResult): Json =
+      result.payload match
+        case OperationPayloadResult.Initialized(_, _, capabilities) =>
+          val body = Json.obj(
+            "serverName" -> Json.fromString(servername),
+            "serverVersion" -> Json.fromString(serverversion),
+            "capabilities" -> _encode_capabilities(capabilities)
+          )
+          McpResponse(id = result.requestId, result = Some(body)).asJson
+
+        case OperationPayloadResult.Tools(tools) =>
+          val toolsJson = Json.arr(
+            tools.map { tool =>
+              Json.obj(
+                "name" -> Json.fromString(tool.name),
+                "description" -> Json.fromString(tool.description),
+                "input_schema" -> Json.obj(
+                  "type" -> Json.fromString("object"),
+                  "required" -> Json.arr(tool.required.map(Json.fromString)*)
+                )
+              )
+            }*
+          )
+
+          val body = Json.obj("tools" -> toolsJson)
+          McpResponse(id = result.requestId, result = Some(body)).asJson
+
+        case OperationPayloadResult.Executed(opResult) =>
+          val body = _encode_operation_result(opResult)
+          McpResponse(id = result.requestId, result = Some(body)).asJson
+
+        case OperationPayloadResult.Failed(error) =>
+          val code = _map_error_code(error.code)
+          val err = McpError(code, error.message)
+          McpResponse(id = result.requestId, error = Some(err)).asJson
+
+    private def _encode_capabilities(capabilities: Map[String, Any]): Json =
+      Json.obj(
+        capabilities.toSeq.map { case (key, value) =>
+          val jsonvalue = value match
+            case s: String => Json.fromString(s)
+            case b: Boolean => Json.fromBoolean(b)
+            case n: Int => Json.fromInt(n)
+            case n: Long => Json.fromLong(n)
+            case n: Double => Json.fromDoubleOrNull(n)
+            case n: Float => Json.fromFloatOrNull(n)
+            case n: BigDecimal => Json.fromBigDecimal(n)
+            case n: BigInt => Json.fromBigInt(n)
+            case other => Json.fromString(other.toString)
+          key -> jsonvalue
+        }*
+      )
+
+    private def _encode_operation_result(result: SieOperationResult): Json =
+      result match
+        case QueryResult(concepts, passages, graph) =>
+          Json.obj(
+            "concepts" -> Json.fromValues(concepts.map(Json.fromString)),
+            "passages" -> Json.fromValues(passages.map(Json.fromString)),
+            "graph" -> parse(graph).fold(_ => Json.fromString(graph), identity)
+          )
+
+        case ExplainConceptResult(description) =>
+          Json.obj(
+            "description" -> Json.fromString(description)
+          )
+
+        case other =>
+          Json.obj(
+            "result" -> Json.fromString(other.toString)
+          )
+
+    private def _map_error_code(code: ProtocolErrorCode): Int =
+      code match
+        case ProtocolErrorCode.InvalidRequest => -32600
+        case ProtocolErrorCode.MethodNotFound => -32601
+        case ProtocolErrorCode.InvalidParams  => -32602
+        case ProtocolErrorCode.InternalError  => -32603
+  }
+}

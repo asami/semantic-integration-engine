@@ -10,7 +10,8 @@ set -e
 # ------------------------------------------------------------
 
 CONFIG_FILE="${SIE_CONFIG_FILE:-/app/conf/application.demo.conf}"
-WS_URL="${SIE_MCP_WS_URL:-ws://localhost:9051/mcp}"
+# Default MCP endpoint (container-internal). Override via SIE_MCP_WS_URL if needed.
+WS_URL="${SIE_MCP_WS_URL:-ws://localhost:9050/mcp}"
 
 exec java \
     -Dconfig.file="${CONFIG_FILE}" \

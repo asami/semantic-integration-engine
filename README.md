@@ -45,8 +45,8 @@ when integrated with the semantic knowledge base of SimpleModeling.org.**
     │   │ sie-embedding │----→ vector search                     │
     │   └───────────────┘                                       │
     │                                                           │
-    │ REST API: /sie/query                                      │
-    │ MCP API : ws://host:9051/mcp                              │
+    │ REST API: /api                                            │
+    │ MCP API : ws://host:9050/mcp                              │
     └───────────────────────────────────────────────────────────┘
 
 SIE integrates both symbolic and embedding-based retrieval to produce
@@ -173,18 +173,18 @@ The demo is designed for:
 Available endpoints:
 
 - Fuseki UI: http://localhost:9030
-- SIE REST API: http://localhost:9050
-- MCP WebSocket: ws://localhost:9051/mcp
+- SIE REST API: http://localhost:9050/api
+- MCP WebSocket: ws://localhost:9050/mcp
 
 ### Example REST query
 
-    curl -X POST http://localhost:9050/sie/query \
+    curl -X POST http://localhost:9050/api/query \
       -H "Content-Type: application/json" \
       -d '{"query": "Explain SimpleModelObject."}'
 
 ### Example MCP session (wscat)
 
-    wscat -c ws://localhost:9051/mcp
+    wscat -c ws://localhost:9050/mcp
 
     {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}
 
@@ -218,8 +218,43 @@ or testing production images before publishing.
 
 ## 🔀 Choose Your MCP Client
 
+### Protocol Boundaries and Interaction Contract
+
+SIE exposes its functionality through multiple **protocol-specific endpoints**
+while sharing a single internal **Interaction Contract**.
+
+- **/api**  
+  REST interface for application and system integration.
+
+- **/mcp**  
+  MCP interface using **strict JSON-RPC 2.0**, intended for AI agents,
+  IDEs, and CLI-based MCP clients.
+
+Each external protocol is handled via a dedicated **ProtocolIngress**
+(input boundary) and **ProtocolAdapter** (output boundary), while
+**SieService** remains the sole executor of the Operation Language.
+
+This design cleanly separates protocol concerns from semantic execution
+and allows REST, MCP, and future integrations (e.g. ChatGPT) to evolve
+independently.
+
 SIE supports multiple MCP clients by separating the MCP Core
 from protocol-specific adapters (ChatGPT / JSON-RPC).
+
+### ExecutionContext (Planned)
+
+SIE follows the CNCF design where an **ExecutionContext** is constructed
+by **SieService** when creating an **OperationCall**.
+
+The ExecutionContext is derived from:
+- encoded execution hints implicitly included in a request, and
+- runtime / environment parameters (mode, policy, locale, time, etc.).
+
+The ExecutionContext is **bound to OperationCall** and accessed implicitly
+by operation implementations, keeping the Operation Language itself pure.
+
+**Status:** design agreed.  
+Implementation and wiring are intentionally **on hold** for now.
 
 ## 🧰 MCP Tool Naming Conventions (SIE)
 
@@ -315,12 +350,12 @@ The REST API is useful for:
 
 ### REST Endpoint
 
-http://localhost:9050/sie/query
+http://localhost:9050/api/query
 
 ### Example REST query
 
 ```bash
-curl -X POST http://localhost:9050/sie/query \
+curl -X POST http://localhost:9050/api/query \
   -H "Content-Type: application/json" \
   -d '{ "query": "Explain SimpleModelObject." }'
 ```

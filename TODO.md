@@ -7,6 +7,21 @@ All items here are deferred by design, not forgotten.
 
 ## 1. Agent / MCP Related
 
+### 1.0 ExecutionContext (CNCF-aligned, On Hold)
+
+- [ ] Use **CNCF-provided ExecutionContext** directly
+  - SIE MUST NOT define its own ExecutionContext type
+  - ExecutionContext will be adopted as-is from CNCF
+- [ ] ExecutionContext integration
+  - Construct ExecutionContext in SieService when building OperationCall
+  - Derive it from:
+    - encoded execution hints implicitly included in a request
+    - runtime / environment parameters (mode, policy, locale, time, etc.)
+  - Bind ExecutionContext to OperationCall
+    - accessed implicitly by operation implementations
+  - Align semantics with CNCF ExecutionContext
+  - Status: design agreed, wiring and implementation intentionally on hold
+
 ### 1.1 agent-mode Step B (Behavioral Branching)
 - [ ] Disable MCP/WebSocket routes when `agent.mode = off`
 - [ ] Support `agent.mode = mcp-only`
@@ -50,6 +65,27 @@ All items here are deferred by design, not forgotten.
   - ChatGPT MCP message decoding
   - mapping to MCP Core requests
 - [ ] Ensure both adapters share the same MCP Core implementation
+
+
+### REST Query Method Policy (Design Note)
+
+- [ ] Use **POST** as the primary method for `/api/query`
+  - supports JSON body (future extensibility: filters, context, scope)
+  - aligns with MCP / JSON-RPC semantics
+- [ ] Add **GET /api/query** as a convenience / diagnostic endpoint
+  - query parameters only (no request body)
+  - intended for quick curl / browser checks
+  - MUST be semantically equivalent to POST /api/query
+- [ ] Explicitly document that **GET with body is not supported**
+  - even if technically possible in some HTTP stacks
+
+### REST Response Format Alignment (Design Note)
+
+- [ ] Fix REST responses to return **proper JSON objects**, not stringified JSON
+  - current issue: fields such as `graph` are returned as JSON-encoded strings
+  - align REST output schema with MCP output where applicable
+  - ensure `Content-Type: application/json` with structured JSON values
+  - keep human-readable formatting as an optional pretty-print concern
 
 ## 1.x CLI (Command Line Interface)
 
