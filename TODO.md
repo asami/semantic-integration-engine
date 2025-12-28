@@ -7,6 +7,40 @@ All items here are deferred by design, not forgotten.
 
 ## 1. Agent / MCP Related
 
+### 1.D Demo Focus: CLI → REST Route (Current)
+
+This section tracks **time-boxed demo work** to expose existing CLI semantics
+via a minimal REST adapter. The goal is architectural demonstration, not
+production readiness.
+
+- [ ] Introduce minimal REST adapter module (e.g. `sie-rest`)
+  - HTTP server bootstrap only (http4s / Akka HTTP / equivalent)
+  - no execution engine coupling
+
+- [ ] Implement single demo route
+  - `/sie/query`
+  - method: POST (primary), GET (diagnostic)
+  - no auth, no advanced routing
+
+- [ ] Map HTTP request → `org.goldenport.protocol.Request`
+  - path → service / operation
+  - query params / JSON body → arguments / properties
+  - respect `ParameterDefinition.kind`
+  - NO validation or semantic interpretation in REST
+
+- [ ] Reuse existing CLI semantic pipeline
+  - delegate to `CliLogic` (or shared lower layer)
+  - ensure REST and CLI converge on identical `OperationRequest`
+
+- [ ] Stub execution layer for demo
+  - return structured JSON
+  - semantic correctness over content richness
+
+- [ ] Demo validation checklist
+  - same operation behaves identically via CLI and REST
+  - error structures are consistent across protocols
+  - no semantic logic exists in REST adapter
+
 ### 1.0 ExecutionContext (CNCF-aligned, On Hold)
 
 - [ ] Use **CNCF-provided ExecutionContext** directly
@@ -87,7 +121,30 @@ All items here are deferred by design, not forgotten.
   - ensure `Content-Type: application/json` with structured JSON values
   - keep human-readable formatting as an optional pretty-print concern
 
+
 ## 1.x CLI (Command Line Interface)
+
+### 1.x.0 CLI Handover Status (2025-12)
+
+The CLI architecture and positioning have been finalized and handed over
+based on CNCF-aligned discussions.
+
+- A lightweight **mini CLI framework** exists in `simplemodeling-lib`
+  (`org.simplemodeling.cli`) and is considered a stable skeleton.
+- The mini CLI is a **thin REST client**:
+  - never executes domain logic locally
+  - never constructs CNCF ExecutionContext
+  - sends only serializable ExecutionContextSnapshot over REST
+- CLI commands are modeled as **Service / Operation (data-only)**:
+  - Operation is a case class (name, endpoint, schema metadata)
+  - all behavior resides in the Runner
+- Two CLI layers are intentionally separated:
+  - mini CLI (schema-driven, REST-oriented, tooling/demo focused)
+  - CNCF CLI (future, OperationCall + full ExecutionContext)
+- Source consolidation in the mini CLI is intentional and MUST be preserved
+  until behavior stabilizes.
+
+These decisions are FINAL for the mini CLI layer and MUST NOT be revisited.
 
 ### 1.x.1 CLI Positioning & Scope
 - [ ] Define CLI as a first-class control interface for SIE
@@ -99,6 +156,7 @@ All items here are deferred by design, not forgotten.
   - interactive REPL
   - one-shot commands
   - script-friendly (non-interactive)
+- [ ] Ensure CLI remains a thin REST client (no local execution, no CNCF ExecutionContext)
 
 ### 1.x.2 Command Model & UX
 - [ ] Define command taxonomy
@@ -107,6 +165,8 @@ All items here are deferred by design, not forgotten.
   - knowledge commands (query, explainConcept, explainContext)
 - [ ] Unify meta-commands (`:xxx`) and CLI commands (`sie xxx`)
 - [ ] Decide command grammar (colon-based vs subcommand-based)
+- [ ] Model CLI commands strictly as Service / Operation (data-only)
+- [ ] Keep Operation behavior out of the model (implemented only in Runner)
 
 ### 1.x.3 Output & Format
 - [ ] Support output formats
@@ -124,6 +184,7 @@ All items here are deferred by design, not forgotten.
 - [ ] Allow AI agents to drive SIE via CLI deterministically
 - [ ] Document CLI usage as canonical examples
 - [ ] Treat CLI transcripts as executable documentation
+- [ ] Treat CLI vocabulary (operations) as schema-level artifacts usable by AI / MCP tooling
 
 ---
 

@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+# ------------------------------------------------------------
+# Host-side SIE CLI entrypoint
+#
+# - The ONLY external command
+# - NEVER runs Java on host
+# - One-shot execution via docker exec
+# ------------------------------------------------------------
+
+exec docker exec sie /opt/sie/bin/sie-cli "$@"

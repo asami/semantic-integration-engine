@@ -26,6 +26,11 @@ if [ ! -x "bin/sie-mcp" ]; then
     chmod +x bin/sie-mcp
 fi
 
+if [ ! -x "bin/sie-cli" ]; then
+    cp /opt/sie/bin/sie-cli.template bin/sie-cli
+    chmod +x bin/sie-cli
+fi
+
 if [ ! -f ".vscode/settings.json" ]; then
     cat > .vscode/settings.json <<EOF
 {

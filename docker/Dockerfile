@@ -24,6 +24,14 @@ RUN chmod +x /opt/sie/bin/mcp-client
 COPY docker/mcp/setup/sie-mcp.template /opt/sie/bin/sie-mcp
 RUN chmod +x /opt/sie/bin/sie-mcp
 
+# SIE CLI launcher (container internal)
+COPY docker/mcp/setup/sie-cli.sh /opt/sie/bin/sie-cli
+RUN chmod +x /opt/sie/bin/sie-cli
+
+# SIE CLI host wrapper template (exported to host)
+COPY docker/mcp/setup/sie-cli.template /opt/sie/bin/sie-cli.template
+RUN chmod +x /opt/sie/bin/sie-cli.template
+
 # SIE entrypoint (shared for demo / production)
 COPY docker/sie-entrypoint.sh /opt/sie/bin/sie-entrypoint.sh
 RUN chmod +x /opt/sie/bin/sie-entrypoint.sh

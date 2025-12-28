@@ -22,7 +22,7 @@ import org.simplemodeling.sie.interaction.ProtocolHandler.WsOutput
 
 import cats.syntax.semigroupk.*
 
-import org.simplemodeling.sie.build.BuildInfo
+import org.simplemodeling.sie.BuildInfo
 import io.circe.syntax.*
 import io.circe.parser.parse
 
@@ -98,7 +98,7 @@ import io.circe.parser.parse
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 21, 2025
+ * @version Dec. 27, 2025
  * @author  ASAMI, Tomoharu
  */
 class HttpRagServer(
@@ -168,6 +168,9 @@ class HttpRagServer(
       mcpmergemanifestintoinitialize
     )
 
+  private def unwrapJsonRpcResult(json: Json): Json =
+    json.hcursor.downField("result").focus.getOrElse(json)
+
   private def httpRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "status" / "schema" =>
       StaticFile.fromResource("/status/schema-v1.json", Some(req))
@@ -194,7 +197,7 @@ class HttpRagServer(
 
     case GET -> Root / "status" =>
       val version = BuildInfo.version
-      val build   = BuildInfo.gitCommit
+      val build   = BuildInfo.build
 
       Ok(
         Json.obj(
@@ -208,6 +211,21 @@ class HttpRagServer(
         )
       )
 
+    // ------------------------------------------------------------
+    // /version
+    //
+    // Lightweight version/build info endpoint for REST clients.
+    // Intended for CLI and demo tooling.
+    // ------------------------------------------------------------
+    case GET -> Root / "version" =>
+      Ok(
+        Json.obj(
+          "name"    -> Json.fromString("semantic-integration-engine"),
+          "version" -> Json.fromString(BuildInfo.version),
+          "build"   -> Json.fromString(BuildInfo.build)
+        )
+      )
+
     case GET -> Root / "status" / "v0.1" =>
       // Legacy status (v0.1): preserved as-is for backward compatibility
       for {
@@ -218,7 +236,7 @@ class HttpRagServer(
             .mapObject(_.remove("status"))
 
         version = BuildInfo.version
-        build   = BuildInfo.gitCommit
+        build   = BuildInfo.build
 
         resp <- Ok(
           sanitizedReport.deepMerge(
@@ -255,20 +273,51 @@ class HttpRagServer(
       yield resp
 
 
-    case req if req.method == Method.GET &&
-                 req.uri.path.renderString.startsWith("/api") =>
-      // Transport only: delegate all semantics to ProtocolHandler
-      handleProtocolHttp(req, Json.obj())
-
-    case req if req.method == Method.POST &&
-                 req.uri.path.renderString.startsWith("/api") =>
+    case req if req.uri.path.renderString.startsWith("/api") =>
       val jsonIO: IO[Json] =
-        req.attemptAs[Json].getOrElse(Json.obj())
+        if req.method == Method.POST then
+          req.attemptAs[Json].getOrElse(Json.obj())
+        else
+          IO.pure(Json.obj())
 
-      for {
-        json <- jsonIO
-        resp <- handleProtocolHttp(req, json)
-      } yield resp
+      jsonIO.flatMap { body =>
+        val toolName =
+          body.hcursor.get[String]("name").getOrElse("")
+        val arguments =
+          body.hcursor
+            .downField("arguments")
+            .focus
+            .flatMap(_.asObject)
+            .map { obj =>
+              obj.toMap.view.mapValues { v =>
+                v.asString.getOrElse(v.noSpaces)
+              }.toMap
+            }
+            .getOrElse(Map.empty)
+
+        // Use MCP JSON-RPC path (same as mcp-client) so the response is JSON.
+        val mcpRequestJson =
+          Json.obj(
+            "jsonrpc" -> Json.fromString("2.0"),
+            "id"      -> Json.Null,
+            "method"  -> Json.fromString("tools/call"),
+            "params"  -> Json.obj(
+              "name"      -> Json.fromString(toolName),
+              "arguments" -> arguments.asJson
+            )
+          )
+
+        val input = WsInput.Text(mcpRequestJson.noSpaces)
+
+        val output =
+          _mcp_handler.handle(input, interactionContext)
+
+        parse(output.message) match
+          case Right(json) =>
+            Ok(unwrapJsonRpcResult(json))
+          case Left(_) =>
+            Ok(Json.obj("message" -> Json.fromString(output.message)))
+      }
   }
 
   private def websocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
@@ -358,6 +407,9 @@ class HttpRagServer(
   ): Pipe[IO, WebSocketFrame, Unit] =
     _.evalMap {
       case WebSocketFrame.Text(text, _) =>
+        // NOTE:
+        // MCP currently reuses REST-style JSON tool invocation.
+        // ProtocolIngress is intentionally bypassed here.
         val input = WsInput.Text(text)
         val output =
           _mcp_handler.handle(input, interactionContext)

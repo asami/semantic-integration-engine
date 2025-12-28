@@ -2168,9 +2168,18 @@ This rule exists to ensure:
 
 ## Intentional Output Divergence
 
+
 When intentionally returning different representations
 (e.g. structured JSON vs natural language for ChatGPT):
 
 - The divergence MUST be explicit and documented
 - The structured canonical representation remains the reference
 - Divergence is treated as a presentation layer concern, not a semantic change
+
+# Test Policy
+
+This project follows a documented test policy.
+
+The authoritative specification is defined in:
+
+    docs/spec/test-policy.md

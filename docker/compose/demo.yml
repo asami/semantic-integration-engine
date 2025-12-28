@@ -47,7 +47,7 @@ services:
   # - This preserves the historical demo behavior from docker-compose.demo.yml.
   #######################################################################
   sie:
-    image: ghcr.io/asami/sie:0.1.0
+    image: ghcr.io/asami/sie:0.2.0
     container_name: sie
     volumes:
       - .:/workspace/vscode-mcp
@@ -85,7 +85,7 @@ services:
   # SIE-MCP — MCP stdio client (transient, non-daemon)
   #######################################################################
   sie-mcp:
-    image: ghcr.io/asami/sie:0.1.0
+    image: ghcr.io/asami/sie:0.2.0
     container_name: sie-mcp
     entrypoint: ["/opt/sie/bin/mcp-client"]
     stdin_open: true
