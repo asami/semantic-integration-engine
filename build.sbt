@@ -1,6 +1,6 @@
 import sbtbuildinfo.BuildInfoPlugin.autoImport._
 
-ThisBuild / scalaVersion := "3.4.2"
+ThisBuild / scalaVersion := "3.6.2"
 
 enablePlugins(BuildInfoPlugin)
 
@@ -8,7 +8,9 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.1.0",
+    version := "0.2.0",
+
+    resolvers += "GitHub Packages" at "https://maven.pkg.github.com/asami/maven-repository",
 
     libraryDependencies ++= Seq(
       // http4s Server/Client
@@ -32,7 +34,13 @@ lazy val root = (project in file("."))
       "com.github.pureconfig" %% "pureconfig-core" % "0.17.5",
 
       // HTML
-      "org.jsoup" % "jsoup" % "1.18.1"
+      "org.jsoup" % "jsoup" % "1.18.1",
+
+      // SimpleModeling
+      "org.goldenport" %% "cncf" % "0.2.0",
+      "org.goldenport" %% "core" % "0.1.0",
+
+      "org.scalatest" %% "scalatest" % "3.2.18" % Test
     ),
 
     // BuildInfo (dynamic version/name for MCP)
@@ -44,7 +52,14 @@ lazy val root = (project in file("."))
 
       // build number (JST date)
       BuildInfoKey.action("build") {
-        val fmt = new java.text.SimpleDateFormat("yyyyMMdd")
+        val versionValue = version.value
+        val pattern =
+          if (versionValue.endsWith("SNAPSHOT"))
+            "yyyyMMdd-HHmmss"
+          else
+            "yyyyMMdd"
+
+        val fmt = new java.text.SimpleDateFormat(pattern)
         fmt.setTimeZone(java.util.TimeZone.getTimeZone("JST"))
         fmt.format(new java.util.Date())
       },
@@ -76,6 +91,14 @@ lazy val root = (project in file("."))
     run / javaOptions ++= Seq(
       "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=*:5005"
     ),
+
+    publishTo := Some(
+      "GitHub Packages" at "https://maven.pkg.github.com/asami/maven-repository"
+    ),
+
+    credentials += Credentials(Path.userHome / ".sbt" / ".credentials"),
+
+    publishMavenStyle := true
   )
 
 addCommandAlias("deploy", ";clean;assembly;copyJar")
@@ -137,16 +160,4 @@ dockerPush := {
   log.info("Push completed.")
 }
 
-dockerDeploy := {
-  val log = streams.value.log
-  log.info("dockerDeploy: dockerBuild → dockerPush")
-
-  // 1) Build image (includes assembly + dist copy)
-  dockerBuild.value
-
-  // 2) Push image
-  dockerPush.value
-
-  log.info("dockerDeploy completed.")
-}
-
+dockerDeploy := Def.sequential(dockerBuild, dockerPush).value
