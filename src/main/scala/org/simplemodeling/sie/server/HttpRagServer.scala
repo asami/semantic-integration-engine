@@ -19,6 +19,7 @@ import org.simplemodeling.sie.interaction.*
 import org.simplemodeling.sie.interaction.ProtocolHandler
 import org.simplemodeling.sie.interaction.ProtocolHandler.WsInput
 import org.simplemodeling.sie.interaction.ProtocolHandler.WsOutput
+import org.goldenport.Consequence
 
 import cats.syntax.semigroupk.*
 
@@ -98,7 +99,7 @@ import io.circe.parser.parse
 /*
  * @since   Nov. 20, 2025
  *  version Nov. 25, 2025
- * @version Dec. 27, 2025
+ * @version Dec. 30, 2025
  * @author  ASAMI, Tomoharu
  */
 class HttpRagServer(
@@ -118,6 +119,7 @@ class HttpRagServer(
   private val sieService = new SieService(service)
   private val restIngress = new RestIngress()
   private val restAdapter = new RestAdapter()
+  private val _protocol_engine = org.simplemodeling.sie.protocol.engine
   private val interactionContext = new InteractionContext {
     override def execute(req: OperationRequest): OperationResult =
       req.payload match
@@ -135,6 +137,23 @@ class HttpRagServer(
             req.requestId,
             OperationPayloadResult.Tools(defaultTools)
           )
+        case OperationPayload.GetManifest =>
+          _protocol_engine.getManifest() match
+            case Consequence.Success(json) =>
+              OperationResult(
+                req.requestId,
+                OperationPayloadResult.Manifest(json)
+              )
+            case Consequence.Failure(errors) =>
+              OperationResult(
+                req.requestId,
+                OperationPayloadResult.Failed(
+                  SimpleProtocolError(
+                    ProtocolErrorCode.InternalError,
+                    errors.toString
+                  )
+                )
+              )
         case OperationPayload.Call(op) =>
           OperationResult(
             req.requestId,

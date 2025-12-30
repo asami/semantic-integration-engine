@@ -13,6 +13,7 @@ import org.http4s.websocket.WebSocketFrame
 
 import org.simplemodeling.sie.BuildInfo
 import org.simplemodeling.sie.interaction.*
+import org.goldenport.Consequence
 
 /*
  * Minimal WebSocket MCP server for JSON-RPC 2.0.
@@ -24,7 +25,7 @@ import org.simplemodeling.sie.interaction.*
  *   4) Encodes via ProtocolEgress
  *
  * @since   Dec.  4, 2025
- * @version Dec. 21, 2025
+ * @version Dec. 30, 2025
  * @author  ASAMI, Tomoharu
  */
 class McpWebSocketServer(
@@ -47,6 +48,7 @@ class McpWebSocketServer(
       )
     )
 
+  private val _protocol_engine = org.simplemodeling.sie.protocol.engine
   private val _ingress = new McpJsonRpcIngress()
   private val _adapter =
     new McpJsonRpcEgress(
@@ -107,6 +109,24 @@ class McpWebSocketServer(
               OperationPayloadResult.Tools(_tools)
             )
 
+          case OperationPayload.GetManifest =>
+            _protocol_engine.getManifest() match
+              case Consequence.Success(json) =>
+                OperationResult(
+                  request.requestId,
+                  OperationPayloadResult.Manifest(json)
+                )
+              case Consequence.Failure(errors) =>
+                OperationResult(
+                  request.requestId,
+                  OperationPayloadResult.Failed(
+                    SimpleProtocolError(
+                      ProtocolErrorCode.InternalError,
+                      errors.toString
+                    )
+                  )
+                )
+
           case OperationPayload.Call(op) =>
             val executed = service.execute(op)
             OperationResult(
@@ -160,7 +180,7 @@ object McpWebSocketServer {
                   Right(OperationRequest(request.id, OperationPayload.Initialize))
 
                 case "get_manifest" =>
-                  Right(OperationRequest(request.id, OperationPayload.ToolsList))
+                  Right(OperationRequest(request.id, OperationPayload.GetManifest))
 
                 case "tools/list" =>
                   Right(OperationRequest(request.id, OperationPayload.ToolsList))
@@ -280,6 +300,9 @@ object McpWebSocketServer {
         case OperationPayloadResult.Executed(opResult) =>
           val body = _encode_operation_result(opResult)
           McpResponse(id = result.requestId, result = Some(body)).asJson
+
+        case OperationPayloadResult.Manifest(json) =>
+          McpResponse(id = result.requestId, result = Some(json)).asJson
 
         case OperationPayloadResult.Failed(error) =>
           val code = _map_error_code(error.code)

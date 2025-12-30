@@ -6,7 +6,7 @@ import io.circe.syntax.*
 
 /*
  * @since   Dec. 20, 2025
- * @version Dec. 21, 2025
+ * @version Dec. 30, 2025
  * @author  ASAMI, Tomoharu
  */
 final class ProtocolHandler[I, O](
@@ -308,7 +308,7 @@ object ProtocolHandler {
                     Right(OperationRequest(req.id, OperationPayload.Initialize))
 
                   case "get_manifest" =>
-                    Right(OperationRequest(req.id, OperationPayload.ToolsList))
+                    Right(OperationRequest(req.id, OperationPayload.GetManifest))
 
                   case "tools/list" =>
                     Right(OperationRequest(req.id, OperationPayload.ToolsList))
@@ -424,6 +424,9 @@ object ProtocolHandler {
           case OperationPayloadResult.Tools(tools) =>
             val body = Json.obj("tools" -> _tools_json(tools))
             McpResponse(id = result.requestId, result = Some(body)).asJson
+
+          case OperationPayloadResult.Manifest(json) =>
+            McpResponse(id = result.requestId, result = Some(json)).asJson
 
           case OperationPayloadResult.Executed(opResult) =>
             val body = encodeOperationResult(opResult)

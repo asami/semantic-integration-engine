@@ -1,8 +1,10 @@
 package org.simplemodeling.sie.interaction
 
+import io.circe.Json
+
 /*
  * @since   Dec. 20, 2025
- * @version Dec. 20, 2025
+ * @version Dec. 30, 2025
  * @author  ASAMI, Tomoharu
  */
 trait ProtocolIngress[I] {
@@ -48,6 +50,7 @@ sealed trait OperationPayload
 object OperationPayload {
   case object Initialize extends OperationPayload
   case object ToolsList extends OperationPayload
+  case object GetManifest extends OperationPayload
   final case class Call(operation: SieOperation) extends OperationPayload
 }
 
@@ -67,6 +70,10 @@ object OperationPayloadResult {
 
   final case class Tools(
     tools: List[OperationTool]
+  ) extends OperationPayloadResult
+
+  final case class Manifest(
+    json: Json
   ) extends OperationPayloadResult
 
   final case class Executed(

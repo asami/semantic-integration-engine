@@ -1,12 +1,22 @@
 package org.simplemodeling.sie.protocol
 
 import org.goldenport.Consequence
+import org.goldenport.protocol.ProtocolEngine
+import org.goldenport.protocol.handler.ProtocolHandler
+import org.goldenport.protocol.handler.egress.EgressCollection
+import org.goldenport.protocol.handler.ingress.IngressCollection
+import org.goldenport.protocol.handler.projection.{
+  CliHelpProjection,
+  McpGetManifestProjection,
+  OpenApiProjection,
+  ProjectionCollection
+}
 import org.goldenport.protocol.spec.*
 import org.goldenport.protocol.operation.OperationRequest
 
 /*
  * @since   Dec. 26, 2025
- * @version Dec. 26, 2025
+ * @version Dec. 30, 2025
  * @author  ASAMI, Tomoharu
  */
 val services = ServiceDefinitionGroup(
@@ -14,6 +24,28 @@ val services = ServiceDefinitionGroup(
     SieService.definition
   )
 )
+
+private lazy val _handler =
+  ProtocolHandler(
+    ingresses = IngressCollection(Vector.empty),
+    egresses = EgressCollection(Vector.empty),
+    projections = ProjectionCollection(
+      Vector(
+        new CliHelpProjection,
+        new OpenApiProjection,
+        new McpGetManifestProjection
+      )
+    )
+  )
+
+private lazy val _protocol =
+  org.goldenport.protocol.Protocol(
+    services = services,
+    handler = _handler
+  )
+
+def engine: ProtocolEngine =
+  ProtocolEngine.create(_protocol)
 
 /**
  * SIE service definition
