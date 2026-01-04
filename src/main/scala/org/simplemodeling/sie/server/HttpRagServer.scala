@@ -5,7 +5,7 @@ import org.http4s.*
 import org.http4s.dsl.io.*
 import org.http4s.circe.*
 import org.http4s.ember.server.*
-import io.circe.Json
+import io.circe.{Json, JsonObject}
 import org.simplemodeling.sie.service.*
 import com.comcast.ip4s.*
 import org.http4s.server.websocket.WebSocketBuilder2
@@ -14,12 +14,14 @@ import fs2.{Pipe, Stream}
 import fs2.concurrent.Channel
 import org.simplemodeling.sie.mcp.McpWebSocketServer
 import org.simplemodeling.sie.config.ServerMode
-import org.simplemodeling.sie.status.Status
 import org.simplemodeling.sie.interaction.*
 import org.simplemodeling.sie.interaction.ProtocolHandler
 import org.simplemodeling.sie.interaction.ProtocolHandler.WsInput
 import org.simplemodeling.sie.interaction.ProtocolHandler.WsOutput
 import org.goldenport.Consequence
+import org.goldenport.http.{HttpRequest as GpHttpRequest, HttpResponse as GpHttpResponse, HttpStatus}
+import org.goldenport.protocol.{Argument, Property, Request as ProtocolRequest, Response as ProtocolResponse}
+import org.goldenport.record.Record
 
 import cats.syntax.semigroupk.*
 
@@ -108,7 +110,7 @@ class HttpRagServer(
   port: Int,
   mode: ServerMode,
   knowledgeControl: org.simplemodeling.sie.config.KnowledgeStoresConfig,
-  systemStatus: Status,
+  systemStatus: org.simplemodeling.sie.status.Status,
   mcpmergemanifestintoinitialize: Boolean
 ):
 
@@ -117,6 +119,8 @@ class HttpRagServer(
   given EntityEncoder[IO, ConceptExplanation] = jsonEncoderOf
 
   private val sieService = new SieService(service)
+  private val cncfComponent =
+    org.goldenport.cncf.component.Component.create(org.simplemodeling.sie.protocol.protocol)
   private val restIngress = new RestIngress()
   private val restAdapter = new RestAdapter()
   private val _protocol_engine = org.simplemodeling.sie.protocol.engine
@@ -180,15 +184,6 @@ class HttpRagServer(
         required = List("name")
       )
     )
-
-  private val _mcp_handler =
-    ProtocolHandler.Mcp.handlerWithTools(
-      defaultTools,
-      mcpmergemanifestintoinitialize
-    )
-
-  private def unwrapJsonRpcResult(json: Json): Json =
-    json.hcursor.downField("result").focus.getOrElse(json)
 
   private def httpRoutes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "status" / "schema" =>
@@ -293,50 +288,7 @@ class HttpRagServer(
 
 
     case req if req.uri.path.renderString.startsWith("/api") =>
-      val jsonIO: IO[Json] =
-        if req.method == Method.POST then
-          req.attemptAs[Json].getOrElse(Json.obj())
-        else
-          IO.pure(Json.obj())
-
-      jsonIO.flatMap { body =>
-        val toolName =
-          body.hcursor.get[String]("name").getOrElse("")
-        val arguments =
-          body.hcursor
-            .downField("arguments")
-            .focus
-            .flatMap(_.asObject)
-            .map { obj =>
-              obj.toMap.view.mapValues { v =>
-                v.asString.getOrElse(v.noSpaces)
-              }.toMap
-            }
-            .getOrElse(Map.empty)
-
-        // Use MCP JSON-RPC path (same as mcp-client) so the response is JSON.
-        val mcpRequestJson =
-          Json.obj(
-            "jsonrpc" -> Json.fromString("2.0"),
-            "id"      -> Json.Null,
-            "method"  -> Json.fromString("tools/call"),
-            "params"  -> Json.obj(
-              "name"      -> Json.fromString(toolName),
-              "arguments" -> arguments.asJson
-            )
-          )
-
-        val input = WsInput.Text(mcpRequestJson.noSpaces)
-
-        val output =
-          _mcp_handler.handle(input, interactionContext)
-
-        parse(output.message) match
-          case Right(json) =>
-            Ok(unwrapJsonRpcResult(json))
-          case Left(_) =>
-            Ok(Json.obj("message" -> Json.fromString(output.message)))
-      }
+      _invoke_cncf_http_(req)
   }
 
   private def websocketRoutes(wsb: WebSocketBuilder2[IO]): HttpRoutes[IO] =
@@ -413,30 +365,264 @@ class HttpRagServer(
       ProtocolHandler.Http.handler.handle(input, interactionContext)
 
     IO.pure(
-      Response(
-        status =
-          org.http4s.Status
-            .fromInt(output.status)
-            .getOrElse(org.http4s.Status.BadRequest)
-      ).withEntity(output.body)
+      Response(status = _to_http4s_status_(_to_http_status_(output.status)))
+        .withEntity(output.body)
     )
+
+  private def _invoke_cncf_http_(
+    req: Request[IO]
+  ): IO[Response[IO]] =
+    _to_cncf_http_request_(req).flatMap { cncfReq =>
+      cncfComponent.service.invokeHttp(cncfReq) match {
+        case Consequence.Success(res) =>
+          IO.pure(_from_cncf_http_response_(res))
+        case Consequence.Failure(err) =>
+          IO.pure(Response(status = _to_http4s_status_(HttpStatus.BadRequest)).withEntity(err.toString))
+      }
+    }
+
+  private def _to_cncf_http_request_(
+    req: Request[IO]
+  ): IO[GpHttpRequest] = {
+    val url = new java.net.URL(_request_url_(req))
+    val method = _request_method_(req)
+    val query = Record.create(req.uri.query.params.toVector)
+    val headers =
+      Record.create(
+        req.headers.headers.map(h => h.name.toString -> h.value)
+      )
+
+    if req.method == Method.POST then
+      req
+        .as[UrlForm]
+        .map { form =>
+          val formRecord = Record.create(form.values.toVector.map { case (k, v) => k -> v })
+          GpHttpRequest(url, method, query, formRecord, headers)
+        }
+        .handleError(_ => GpHttpRequest(url, method, query, Record.empty, headers))
+    else
+      IO.pure(GpHttpRequest(url, method, query, Record.empty, headers))
+  }
+
+  private def _request_url_(
+    req: Request[IO]
+  ): String =
+    s"http://$host:$port${req.uri.renderString}"
+
+  private def _request_method_(
+    req: Request[IO]
+  ): GpHttpRequest.Method =
+    req.method match {
+      case Method.GET => GpHttpRequest.GET
+      case Method.POST => GpHttpRequest.POST
+      case Method.PUT => GpHttpRequest.PUT
+      case Method.DELETE => GpHttpRequest.DELETE
+      case _ => GpHttpRequest.GET
+    }
+
+  private def _from_cncf_http_response_(
+    res: GpHttpResponse
+  ): Response[IO] = {
+    val status = _to_http4s_status_(res.status)
+    res.getString match {
+      case Some(text) =>
+        Response[IO](status = status).withEntity(text)
+      case None =>
+        res.getBinary match {
+          case Some(bin) =>
+            val bytes = bin.openInputStream().readAllBytes()
+            Response[IO](status = status).withEntity(bytes)
+          case None =>
+            Response[IO](status = status)
+        }
+    }
+  }
+
+  private def _to_http_status_(
+    code: Int
+  ): HttpStatus =
+    HttpStatus.fromInt(code).getOrElse(HttpStatus.BadRequest)
+
+  private def _to_http4s_status_(
+    status: HttpStatus
+  ): Status =
+    Status.fromInt(status.code).getOrElse(Status.BadRequest)
+
+  private def _handle_mcp_text_(
+    text: String
+  ): String =
+    parse(text) match {
+      case Left(err) =>
+        _mcp_error_(None, -32600, s"invalid json: ${err.getMessage}")
+      case Right(json) =>
+        json.as[ProtocolHandler.Mcp.McpRequest] match {
+          case Left(err) =>
+            _mcp_error_(None, -32600, s"invalid request: ${err.getMessage}")
+          case Right(req) =>
+            _handle_mcp_request_(req)
+        }
+    }
+
+  private def _handle_mcp_request_(
+    req: ProtocolHandler.Mcp.McpRequest
+  ): String = {
+    if (req.jsonrpc != "2.0") {
+      _mcp_error_(req.id, -32600, s"unsupported jsonrpc version: ${req.jsonrpc}")
+    } else {
+      req.method match {
+        case "initialize" =>
+          val base = Json.obj("capabilities" -> Json.obj())
+          val body =
+            if mcpmergemanifestintoinitialize then
+              base.deepMerge(Json.obj("tools" -> _tools_json_(defaultTools)))
+            else
+              base
+          _mcp_result_(req.id, body)
+
+        case "tools/list" =>
+          _mcp_result_(req.id, Json.obj("tools" -> _tools_json_(defaultTools)))
+
+        case "get_manifest" =>
+          _protocol_engine.getManifest() match {
+            case Consequence.Success(json) =>
+              _mcp_result_(req.id, json)
+            case Consequence.Failure(err) =>
+              _mcp_error_(req.id, -32603, err.toString)
+          }
+
+        case "tools/call" =>
+          _handle_mcp_tool_call_(req)
+
+        case other =>
+          _mcp_error_(req.id, -32601, s"unknown method: $other")
+      }
+    }
+  }
+
+  private def _handle_mcp_tool_call_(
+    req: ProtocolHandler.Mcp.McpRequest
+  ): String =
+    req.params match {
+      case None =>
+        _mcp_error_(req.id, -32602, "missing params")
+      case Some(params) =>
+        val cursor = params.hcursor
+        val name = cursor.get[String]("name").getOrElse("")
+        if (name != "query") {
+          _mcp_error_(req.id, -32601, s"unknown tool: $name")
+        } else {
+          val args =
+            cursor
+              .downField("arguments")
+              .focus
+              .flatMap(_.asObject)
+              .getOrElse(JsonObject.empty)
+
+          val query = args("query").flatMap(_.asString).getOrElse("")
+          if (query.isEmpty) {
+            _mcp_error_(req.id, -32602, "missing query")
+          } else {
+            val limit = _parse_limit_(args)
+            val request = _build_query_request_(query, limit)
+            cncfComponent.service.invokeRequest(request) match {
+              case Consequence.Success(res) =>
+                _mcp_result_(req.id, _protocol_response_to_json_(res))
+              case Consequence.Failure(err) =>
+                _mcp_error_(req.id, -32603, err.toString)
+            }
+          }
+        }
+    }
+
+  private def _parse_limit_(
+    args: JsonObject
+  ): Option[Int] =
+    args("limit").flatMap(_.asNumber).flatMap(_.toInt)
+      .orElse(args("limit").flatMap(_.asString).flatMap(_.toIntOption))
+
+  private def _build_query_request_(
+    query: String,
+    limit: Option[Int]
+  ): ProtocolRequest = {
+    val arguments =
+      List(
+        Argument("query", query, None)
+      )
+    val properties =
+      limit.map(v => Property("limit", v.toString, None)).toList
+
+    ProtocolRequest(
+      service = None,
+      operation = "query",
+      arguments = arguments,
+      switches = Nil,
+      properties = properties
+    )
+  }
+
+  private def _protocol_response_to_json_(
+    res: ProtocolResponse
+  ): Json =
+    res match {
+      case ProtocolResponse.Json(value) =>
+        Json.fromString(value)
+      case ProtocolResponse.Scalar(value) =>
+        Json.fromString(value.toString)
+      case ProtocolResponse.Void() =>
+        Json.Null
+    }
+
+  private def _tools_json_(
+    tools: List[OperationTool]
+  ): Json =
+    Json.arr(
+      tools.map { tool =>
+        Json.obj(
+          "name" -> Json.fromString(tool.name),
+          "description" -> Json.fromString(tool.description),
+          "input_schema" -> Json.obj(
+            "type" -> Json.fromString("object"),
+            "required" -> Json.arr(tool.required.map(Json.fromString)*)
+          )
+        )
+      }*
+    )
+
+  private def _mcp_result_(
+    id: Option[String],
+    result: Json
+  ): String =
+    Json.obj(
+      "jsonrpc" -> Json.fromString("2.0"),
+      "id" -> id.map(Json.fromString).getOrElse(Json.Null),
+      "result" -> result
+    ).noSpaces
+
+  private def _mcp_error_(
+    id: Option[String],
+    code: Int,
+    message: String
+  ): String =
+    Json.obj(
+      "jsonrpc" -> Json.fromString("2.0"),
+      "id" -> id.map(Json.fromString).getOrElse(Json.Null),
+      "error" -> Json.obj(
+        "code" -> Json.fromInt(code),
+        "message" -> Json.fromString(message)
+      )
+    ).noSpaces
 
   private def handleProtocolMcp(
     channel: Channel[IO, WebSocketFrame]
   ): Pipe[IO, WebSocketFrame, Unit] =
     _.evalMap {
       case WebSocketFrame.Text(text, _) =>
-        // NOTE:
-        // MCP currently reuses REST-style JSON tool invocation.
-        // ProtocolIngress is intentionally bypassed here.
-        val input = WsInput.Text(text)
-        val output =
-          _mcp_handler.handle(input, interactionContext)
-        channel.send(WebSocketFrame.Text(output.message)).void
+        val output = _handle_mcp_text_(text)
+        channel.send(WebSocketFrame.Text(output)).void
 
       case _ =>
-        val output = WsOutput("unsupported frame")
-        channel.send(WebSocketFrame.Text(output.message)).void
+        val output = _mcp_error_(None, -32600, "unsupported frame")
+        channel.send(WebSocketFrame.Text(output)).void
     }
 
   private def handleProtocolChatGpt(
@@ -502,12 +688,16 @@ class HttpRagServer(
       .withHost(Host.fromString(host).getOrElse(host"0.0.0.0"))
       .withPort(Port.fromInt(port).getOrElse(port"8080"))
       .withHttpWebSocketApp { wsb =>
-        (httpRoutes <+> protocolWebSocketRoutes(wsb) <+> websocketRoutes(wsb)).orNotFound
+        (
+          httpRoutes <+>
+            protocolWebSocketRoutes(wsb) <+>
+            websocketRoutes(wsb)
+        ).orNotFound
       }
       .build
       .useForever
 
-  private def knowledgeJson(status: Status): Json =
+  private def knowledgeJson(status: org.simplemodeling.sie.status.Status): Json =
     val doc = status.vectorDb.collections.document
     val concept = status.vectorDb.collections.concept
 

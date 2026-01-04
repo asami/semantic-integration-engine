@@ -2183,3 +2183,37 @@ This project follows a documented test policy.
 The authoritative specification is defined in:
 
     docs/spec/test-policy.md
+
+
+# Volatile Handover Policy
+
+This project uses **volatile handovers** for session-to-session coordination.
+
+A volatile handover is a **session-local, non-persistent** handover artifact
+used only to transfer working assumptions during an active development session.
+
+## Rules
+
+- Volatile handovers MUST NOT be committed to the repository.
+- Volatile handovers MUST NOT be preserved as historical records.
+- Volatile handovers MUST be discarded at the end of the session.
+- The contents of a volatile handover MUST be reflected into
+  authoritative documents before disposal.
+
+## Authoritative Documents
+
+The following documents are authoritative and persistent:
+
+- README.md (project-level assumptions and scope)
+- RULE.md (non-negotiable rules and conventions)
+- TODO.md (intentionally deferred or pending work)
+- docs/ (design notes, specifications, and background material)
+
+Volatile handovers are **not** authoritative and must never replace
+or contradict these documents.
+
+## Rationale
+
+This policy minimizes noise, avoids stale assumptions, and ensures that
+only curated and reviewed knowledge is retained in the repository,
+while still allowing high-frequency handoff during active development.

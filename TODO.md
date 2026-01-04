@@ -41,20 +41,10 @@ production readiness.
   - error structures are consistent across protocols
   - no semantic logic exists in REST adapter
 
-### 1.0 ExecutionContext (CNCF-aligned, On Hold)
+### 1.0 ExecutionContext (CNCF-aligned)
 
-- [ ] Use **CNCF-provided ExecutionContext** directly
-  - SIE MUST NOT define its own ExecutionContext type
-  - ExecutionContext will be adopted as-is from CNCF
-- [ ] ExecutionContext integration
-  - Construct ExecutionContext in SieService when building OperationCall
-  - Derive it from:
-    - encoded execution hints implicitly included in a request
-    - runtime / environment parameters (mode, policy, locale, time, etc.)
-  - Bind ExecutionContext to OperationCall
-    - accessed implicitly by operation implementations
-  - Align semantics with CNCF ExecutionContext
-  - Status: design agreed, wiring and implementation intentionally on hold
+- [ ] Wire CNCF ExecutionContext into OperationCall construction
+- [ ] Thread ExecutionContext through SieService → OperationCall
 
 ### 1.1 agent-mode Step B (Behavioral Branching)
 - [ ] Disable MCP/WebSocket routes when `agent.mode = off`

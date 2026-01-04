@@ -13,6 +13,7 @@ import org.goldenport.protocol.handler.projection.{
 }
 import org.goldenport.protocol.spec.*
 import org.goldenport.protocol.operation.OperationRequest
+import org.simplemodeling.sie.action.query.QueryAction
 
 /*
  * @since   Dec. 26, 2025
@@ -43,6 +44,9 @@ private lazy val _protocol =
     services = services,
     handler = _handler
   )
+
+def protocol: org.goldenport.protocol.Protocol =
+  _protocol
 
 def engine: ProtocolEngine =
   ProtocolEngine.create(_protocol)
@@ -93,7 +97,11 @@ object Query extends OperationDefinition {
   override def createOperationRequest(
     req: org.goldenport.protocol.Request
   ): Consequence[OperationRequest] = {
-    given org.goldenport.protocol.Request = req
-    take_string("query").map(Query(_))
+    req.operation match {
+      case "query" =>
+        QueryAction.parse(req)
+      case other =>
+        Consequence.failure(s"Unknown operation: $other")
+    }
   }
 }

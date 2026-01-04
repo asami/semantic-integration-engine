@@ -30,6 +30,14 @@ when integrated with the semantic knowledge base of SimpleModeling.org.**
 
 ---
 
+## CNCF Boundary Contracts
+
+- ExecutionContext is provided by CNCF and consumed by SIE as read-only data.
+- SIE must not construct, mutate, or infer semantics from ExecutionContext.
+- CanonicalId is opaque and used for correlation only.
+
+---
+
 ## 🌐 Architecture Overview
 
     ┌───────────────────────────────────────────────────────────┐
