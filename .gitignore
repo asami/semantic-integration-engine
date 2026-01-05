@@ -12,6 +12,7 @@ chroma-data
 docker/compose/fuseki/databases
 docker/compose/src
 dist
+WARP.md
 
 ### Metals (VS Code Scala extension) ###
 .metals/

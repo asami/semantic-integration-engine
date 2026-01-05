@@ -8,7 +8,7 @@ lazy val root = (project in file("."))
   .settings(
     name := "semantic-integration-engine",
 
-    version := "0.2.1-SNAPSHOT",
+    version := "0.2.1",
 
     resolvers += "GitHub Packages" at "https://maven.pkg.github.com/asami/maven-repository",
 
@@ -37,7 +37,7 @@ lazy val root = (project in file("."))
       "org.jsoup" % "jsoup" % "1.18.1",
 
       // SimpleModeling
-      "org.goldenport" %% "goldenport-cncf" % "0.2.1-SNAPSHOT",
+      "org.goldenport" %% "goldenport-cncf" % "0.2.1",
 
       "org.scalatest" %% "scalatest" % "3.2.18" % Test
     ),
