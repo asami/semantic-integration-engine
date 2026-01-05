@@ -14,6 +14,7 @@ import fs2.{Pipe, Stream}
 import fs2.concurrent.Channel
 import org.simplemodeling.sie.mcp.McpWebSocketServer
 import org.simplemodeling.sie.config.ServerMode
+import org.simplemodeling.sie.context.SieContext
 import org.simplemodeling.sie.interaction.*
 import org.simplemodeling.sie.interaction.ProtocolHandler
 import org.simplemodeling.sie.interaction.ProtocolHandler.WsInput
@@ -120,7 +121,12 @@ class HttpRagServer(
 
   private val sieService = new SieService(service)
   private val cncfComponent =
-    org.goldenport.cncf.component.Component.create(org.simplemodeling.sie.protocol.protocol)
+    org.goldenport.cncf.component.Component.create(
+      org.simplemodeling.sie.protocol.protocol,
+      org.goldenport.cncf.component.Component.ApplicationConfig(
+        applicationContext = Some(SieContext(service))
+      )
+    )
   private val restIngress = new RestIngress()
   private val restAdapter = new RestAdapter()
   private val _protocol_engine = org.simplemodeling.sie.protocol.engine
@@ -374,10 +380,13 @@ class HttpRagServer(
   ): IO[Response[IO]] =
     _to_cncf_http_request_(req).flatMap { cncfReq =>
       cncfComponent.service.invokeHttp(cncfReq) match {
-        case Consequence.Success(res) =>
-          IO.pure(_from_cncf_http_response_(res))
-        case Consequence.Failure(err) =>
-          IO.pure(Response(status = _to_http4s_status_(HttpStatus.BadRequest)).withEntity(err.toString))
+        case org.goldenport.Consequence.Success(result) =>
+          IO.pure(_from_cncf_http_response_(result))
+        case org.goldenport.Consequence.Failure(err) =>
+          IO.pure(
+            Response(status = _to_http4s_status_(HttpStatus.BadRequest))
+              .withEntity(err.toString)
+          )
       }
     }
 
@@ -525,9 +534,9 @@ class HttpRagServer(
             val limit = _parse_limit_(args)
             val request = _build_query_request_(query, limit)
             cncfComponent.service.invokeRequest(request) match {
-              case Consequence.Success(res) =>
-                _mcp_result_(req.id, _protocol_response_to_json_(res))
-              case Consequence.Failure(err) =>
+              case org.goldenport.Consequence.Success(result) =>
+                _mcp_result_(req.id, _protocol_response_to_json_(result))
+              case org.goldenport.Consequence.Failure(err) =>
                 _mcp_error_(req.id, -32603, err.toString)
             }
           }

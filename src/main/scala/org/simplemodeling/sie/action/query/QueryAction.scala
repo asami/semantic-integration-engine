@@ -5,7 +5,8 @@ import org.goldenport.protocol.{Argument, Property, Request}
 import org.goldenport.protocol.{Response as ProtocolResponse}
 import org.goldenport.protocol.operation.OperationResponse
 import org.goldenport.cncf.action.{Action, ActionCall, Query, ResourceAccess}
-import io.circe.Json
+import org.simplemodeling.sie.context.SieContext
+import io.circe.syntax.*
 
 final case class QueryAction(
   query: String,
@@ -63,26 +64,27 @@ object QueryAction {
 final case class QueryActionCall(
   query: String,
   limit: Int,
-  core: ActionCall.Core
-) extends ActionCall() {
+  actioncore: ActionCall.Core
+) extends ActionCall {
 
-  override def action: Action = core.action
+  override def core: ActionCall.Core = actioncore
+
+  override def action: Action = actioncore.action
 
   override def accesses: Seq[ResourceAccess] = Nil
 
   override def execute(): Consequence[OperationResponse] =
-    Consequence.success(
+    Consequence {
+      val sie = application_context[SieContext]
+      val ragResult = sie.ragService.run(query)
+      val limited =
+        ragResult.copy(
+          concepts = ragResult.concepts.take(limit),
+          passages = ragResult.passages.take(limit)
+        )
       new OperationResponse {
         def toResponse: ProtocolResponse =
-          ProtocolResponse.Json(
-            Json.obj(
-              "query" -> Json.fromString(query),
-              "limit" -> Json.fromInt(limit),
-              "concepts" -> Json.arr(),
-              "passages" -> Json.arr(),
-              "graph" -> Json.obj()
-            ).noSpaces
-          )
+          ProtocolResponse.Json(limited.asJson.noSpaces)
       }
-    )
+    }
 }
