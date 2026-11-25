@@ -4,4 +4,4 @@ Reviewed [Anthropic Contextual Retrieval](https://www.anthropic.com/research/con
 
 Direction: adopt the technique in the SIE ecosystem, with document context first and graph-aware context as a later PoC. TKL supplies authorized versioned source and provenance; generated context remains derived and must not be confused with approved knowledge. Preserve standalone RAG and existing Protocol boundaries. The current AGENTS.md limits this repository to integration/transport responsibilities; resolve delegated implementation ownership before development.
 
-See [notes](../../notes/contextual-retrieval.md) and [delivery plan](../../phase/contextual-retrieval-plan.md). No phase priority or implementation status is changed.
+See [notes](../../notes/contextual-retrieval.md) and [delivery plan](../../phase/phase-1.md). No phase priority or implementation status is changed.
