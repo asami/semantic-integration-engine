@@ -1,6 +1,6 @@
 # Contextual Retrieval Architecture Notes
 
-Non-normative exploration. [Delivery plan](../phase/contextual-retrieval-plan.md); [TKL integration](https://github.com/asami/textus-knowledge-lake/blob/main/docs/phase/phase-3.md).
+Non-normative exploration. [Delivery plan](../phase/phase-1.md); [TKL integration](https://github.com/asami/textus-knowledge-lake/blob/main/docs/phase/phase-3.md).
 
 Pipeline: authorized source -> structure-aware chunks -> chunk-specific contextualization -> contextual embedding and BM25 -> rank fusion with optional RDF retrieval -> reranking -> bounded context assembly. Keep contextualization independent of embedding and reusable. Raw chunk, generated explanation and source references must remain distinguishable. Treat document content as untrusted data, not instructions.
 
